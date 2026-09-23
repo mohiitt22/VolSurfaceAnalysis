@@ -29,9 +29,11 @@ button:hover, select:focus, input:focus { border-color: var(--accent); }
 .verdict-card, .panel, .defs { background: var(--panel); border: 1px solid var(--line); padding: 16px; }
 .kicker { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
 .verdict { font-size: 34px; font-weight: 700; margin: 8px 0; letter-spacing: 0.02em; }
-.verdict.cheap { color: var(--cheap); }
-.verdict.expensive { color: var(--exp); }
+.verdict.cheap, .verdict.trade { color: var(--cheap); }
+.verdict.expensive, .verdict.trade-exp { color: var(--exp); }
 .verdict.undecided { color: var(--undecided); }
+.verdict.notrade { color: #8b939c; }
+.direction { color: var(--muted); font-size: 13px; margin: -4px 0 8px; }
 .why { color: var(--muted); margin: 0 0 10px; }
 .reasons { margin: 0; padding-left: 18px; color: var(--text); }
 .reasons li { margin: 3px 0; }
@@ -59,9 +61,21 @@ canvas { width: 100%; height: auto; background: #12151a; border: 1px solid var(-
 .data tr:hover td { background: #20242b; }
 .data tr.active td { background: #243044; }
 .pill { display: inline-block; padding: 1px 6px; border: 1px solid currentColor; font-size: 11px; letter-spacing: 0.04em; }
-.pill.cheap { color: var(--cheap); }
-.pill.expensive { color: var(--exp); }
+.pill.cheap, .pill.trade { color: var(--cheap); }
+.pill.expensive, .pill.trade-exp { color: var(--exp); }
 .pill.undecided { color: var(--undecided); }
+.pill.notrade { color: #8b939c; }
+.counts { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px 12px; }
+.count { border: 1px solid var(--line); background: var(--panel); padding: 6px 10px; font-size: 12px; color: var(--muted); }
+.count b { color: var(--text); display: block; font-size: 16px; }
+.count.trade b { color: var(--cheap); }
+.count.notrade b { color: #8b939c; }
+.count.undecided b { color: var(--undecided); }
+.count.muted { font-size: 11px; }
+.count.muted b { display: inline; font-size: 11px; }
+.controls .check { flex-direction: row; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 13px; }
+.inline { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.inline input { min-width: 240px; }
 footer { padding: 8px 24px 28px; color: var(--muted); font-size: 12px; }
 @media (max-width: 980px) {
   .verdict-row, .grid { grid-template-columns: 1fr; }

@@ -10,7 +10,7 @@
   <header class="top">
     <div>
       <h1>60DTE IV relative-value desk</h1>
-      <p class="sub">Cheap / expensive / cannot decide — any structure combination, any date. Holdout 11 Sep 2026 is frozen.</p>
+      <p class="sub">Every RR, butterfly, delta point, slope and listed strike — TRADE / NO TRADE / CANNOT DECIDE. Gate is not retuned. Holdout 11 Sep 2026 is frozen.</p>
     </div>
     <div class="badges" id="metaBadges"></div>
   </header>
@@ -28,22 +28,37 @@
     <label>Z gate
       <select id="zGate">
         <option value="1">1.0</option>
-        <option value="1.5" selected>1.5 (analysis)</option>
+        <option value="1.5">1.5 (analysis)</option>
         <option value="2">2.0</option>
         <option value="2.5">2.5</option>
-        <option value="3">3.0 (frozen)</option>
+        <option value="3" selected>3.0 (frozen)</option>
+      </select>
+    </label>
+    <label>Decision
+      <select id="decisionFilter">
+        <option value="all">all</option>
+        <option value="TRADE">TRADE</option>
+        <option value="NO TRADE">NO TRADE</option>
+        <option value="CANNOT DECIDE">CANNOT DECIDE</option>
       </select>
     </label>
     <label>Compare
       <select id="compare"><option value="">— none —</option></select>
     </label>
+    <label class="check">
+      <input id="showListed" type="checkbox" checked />
+      Show listed strikes
+    </label>
     <button id="jumpTest" type="button">Jump to 11 Sep 2026</button>
   </section>
 
+  <section class="counts" id="countStrip"></section>
+
   <section class="verdict-row">
     <article class="verdict-card" id="verdictCard">
-      <div class="kicker">Composite verdict</div>
-      <div class="verdict" id="verdictLabel">…</div>
+      <div class="kicker">Frozen decision</div>
+      <div class="verdict" id="verdictLabel">Loading panel…</div>
+      <div class="direction" id="verdictDir"></div>
       <p class="why" id="verdictWhy"></p>
       <ul class="reasons" id="verdictReasons"></ul>
     </article>
@@ -73,7 +88,10 @@
 
   <section class="panel wide">
     <h2>Cross-section on selected date</h2>
-    <p class="caption">Same day, every structure. Click a row to load it. Colour is the composite verdict at the current z-gate.</p>
+    <p class="caption">Same day, every structure in the expanded book. Click a row to load it. Colour is TRADE / NO TRADE / CANNOT DECIDE at the current z-gate. Listed-strike z uses a 0.02 log-moneyness bin, not raw K over time.</p>
+    <label class="inline">Search
+      <input id="crossSearch" type="search" placeholder="RR_25D, SLOPE, STRIKE_7700…" />
+    </label>
     <div class="table-wrap">
       <table class="data" id="crossTable">
         <thead></thead>
@@ -95,7 +113,7 @@
 
   <footer>
     Training 2025-06-05 → 2026-09-08. Gap 9–10 Sep unused for tuning. 11 Sep 2026 is the untouched holdout.
-    Cheap ≠ low IV. Cheap ≠ below SVI. A useful signal needs residual + history + agreement + liquidity + edge after costs.
+    TRADE needs residual and z60 to agree, |z60| ≥ gate, and no extrapolation. Clean but |z| below the gate is NO TRADE. Missing z, sign conflict, or extrapolation is CANNOT DECIDE. Gate was not retuned.
   </footer>
   <script src="app.js"></script>
 </body>
