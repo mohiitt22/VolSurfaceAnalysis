@@ -27,7 +27,10 @@ relative value**, not minimum surface RMSE.
 start dashboard/index.html
 ```
 
-Vercel deploys the `dashboard/` folder (see that folder's `vercel.json`).
+- Dashboard: https://snp-60dte-iv-desk.vercel.app
+- Private repo: https://github.com/Ayushkumarsingh09/snp-60dte-iv-relative-value
+
+Vercel serves the `dashboard/` folder. Raw option chains are not in the repo.
 
 ## Run
 
