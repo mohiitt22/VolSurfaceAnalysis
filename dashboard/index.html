@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>60DTE IV Relative-Value Desk</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>60DTE IV relative-value desk</h1>
+      <p class="sub">Cheap / expensive / cannot decide — any structure combination, any date. Holdout 11 Sep 2026 is frozen.</p>
+    </div>
+    <div class="badges" id="metaBadges"></div>
+  </header>
+
+  <section class="controls">
+    <label>Kind
+      <select id="kind"></select>
+    </label>
+    <label>Structure
+      <select id="structure"></select>
+    </label>
+    <label>Date
+      <input id="date" type="date" />
+    </label>
+    <label>Z gate
+      <select id="zGate">
+        <option value="1">1.0</option>
+        <option value="1.5" selected>1.5 (analysis)</option>
+        <option value="2">2.0</option>
+        <option value="2.5">2.5</option>
+        <option value="3">3.0 (frozen)</option>
+      </select>
+    </label>
+    <label>Compare
+      <select id="compare"><option value="">— none —</option></select>
+    </label>
+    <button id="jumpTest" type="button">Jump to 11 Sep 2026</button>
+  </section>
+
+  <section class="verdict-row">
+    <article class="verdict-card" id="verdictCard">
+      <div class="kicker">Composite verdict</div>
+      <div class="verdict" id="verdictLabel">…</div>
+      <p class="why" id="verdictWhy"></p>
+      <ul class="reasons" id="verdictReasons"></ul>
+    </article>
+    <article class="defs" id="defCards"></article>
+  </section>
+
+  <section class="grid">
+    <article class="panel">
+      <h2>Selected structure path</h2>
+      <p class="caption" id="chartCaption">Market value vs ensemble fair · residual z overlay</p>
+      <canvas id="chart" width="920" height="320"></canvas>
+    </article>
+    <article class="panel">
+      <h2>Snapshot</h2>
+      <table class="kv" id="snapTable"></table>
+    </article>
+    <article class="panel">
+      <h2>Regime that day</h2>
+      <table class="kv" id="regimeTable"></table>
+      <p class="caption">IV &gt; RV is a risk premium / jump premium feature, not automatic richness.</p>
+    </article>
+    <article class="panel">
+      <h2>Historical behaviour of this structure</h2>
+      <table class="kv" id="histTable"></table>
+    </article>
+  </section>
+
+  <section class="panel wide">
+    <h2>Cross-section on selected date</h2>
+    <p class="caption">Same day, every structure. Click a row to load it. Colour is the composite verdict at the current z-gate.</p>
+    <div class="table-wrap">
+      <table class="data" id="crossTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <h2>Walk-forward IC (research period only)</h2>
+    <p class="caption">Ridge on 5-day residual convergence. Unstable IC is why the frozen book is allowed to say NO TRADE.</p>
+    <div class="table-wrap">
+      <table class="data" id="wfTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Training 2025-06-05 → 2026-09-08. Gap 9–10 Sep unused for tuning. 11 Sep 2026 is the untouched holdout.
+    Cheap ≠ low IV. Cheap ≠ below SVI. A useful signal needs residual + history + agreement + liquidity + edge after costs.
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+{
+  "all": {
+    "n": 14444,
+    "n_with_pnl": 9167,
+    "mean_exec_pnl": -2.5477749224510333,
+    "median_exec_pnl": -3.4197077184776674,
+    "mean_mid_pnl": 1.7032614035007498,
+    "hit_rate_exec": 0.3087160466892113,
+    "mean_convergence": 0.00019193813977485532,
+    "hit_rate_convergence": 0.6332497000109087,
+    "sharpe_proxy": -2.8221885118276857,
+    "max_dd_proxy": -23582.644627360925
+  },
+  "signalled": {
+    "n": 92,
+    "n_with_pnl": 80,
+    "mean_exec_pnl": -1.7604804106854917,
+    "median_exec_pnl": 0.0004531983434857556,
+    "mean_mid_pnl": 1.750457089314508,
+    "hit_rate_exec": 0.525,
+    "mean_convergence": 0.0014253762032203445,
+    "hit_rate_convergence": 0.9625,
+    "sharpe_proxy": -2.317313002219675,
+    "max_dd_proxy": -140.84189979455226
+  },
+  "verticals": {
+    "n": 14,
+    "n_with_pnl": 12,
+    "mean_exec_pnl": -4.338069507485009,
+    "median_exec_pnl": -4.502795164264711,
+    "mean_mid_pnl": 0.7244304925149917,
+    "hit_rate_exec": 0.0,
+    "mean_convergence": 0.0012287369043978518,
+    "hit_rate_convergence": 1.0,
+    "sharpe_proxy": -21.86177864887304,
+    "max_dd_proxy": -46.93792781556237
+  },
+  "rr": {
+    "n": 1570,
+    "n_with_pnl": 1465,
+    "mean_exec_pnl": -6.004508065764548,
+    "median_exec_pnl": -6.054515855701093,
+    "mean_mid_pnl": 0.42791514242657774,
+    "hit_rate_exec": 0.0006825938566552901,
+    "mean_convergence": 0.0002087313017021332,
+    "hit_rate_convergence": 0.6498293515358362,
+    "sharpe_proxy": -30.039627548023105,
+    "max_dd_proxy": -8788.67027563916
+  },
+  "bf": {
+    "n": 1570,
+    "n_with_pnl": 1465,
+    "mean_exec_pnl": 0.15464165953367887,
+    "median_exec_pnl": 0.43801442987762584,
+    "mean_mid_pnl": 9.803276471820368,
+    "hit_rate_exec": 0.5160409556313993,
+    "mean_convergence": 0.00016913985080974073,
+    "hit_rate_convergence": 0.6191126279863481,
+    "sharpe_proxy": 0.07647716322521905,
+    "max_dd_proxy": -974.2639494562466
+  },
+  "z_threshold": 3.0,
+  "horizon": 5
+}

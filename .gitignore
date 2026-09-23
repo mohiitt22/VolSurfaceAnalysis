@@ -1,0 +1,24 @@
+# Raw option chains — too large and not needed for the dashboard
+SNP data/
+SNP data/**
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Research binaries
+outputs/**/*.parquet
+*.log
+
+# Node / Vercel
+node_modules/
+.vercel
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
