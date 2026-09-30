@@ -376,6 +376,148 @@ canvas { width: 100%; height: auto; background: #0c0f14; border: 1px solid var(-
   color: #0d1117;
 }
 
+/* ==================== FORWARD TRACKER & POST-HOLDOUT STYLES ==================== */
+.post-holdout-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.stepper-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.btn-highlight {
+  background: #21262d;
+  color: #fff;
+  border: 1px solid var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+.btn-highlight:hover {
+  background: var(--accent);
+  color: #0d1117;
+}
+
+.post-holdout-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 24px 10px;
+  background: #11151c;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+}
+.strip-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.date-chips-wrap {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.date-chip {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.date-chip:hover {
+  color: #fff;
+  border-color: var(--accent);
+}
+.date-chip.active {
+  background: rgba(88, 166, 255, 0.2);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.date-chip.holdout-chip {
+  border-color: var(--hold);
+  color: var(--hold);
+}
+.date-chip.holdout-chip.active {
+  background: rgba(163, 113, 247, 0.25);
+  color: #d2a8ff;
+  border-color: #bc8cff;
+}
+
+/* Forward Tracker Section */
+.forward-panel {
+  border-left: 3px solid var(--accent);
+  background: linear-gradient(180deg, #161b22 0%, #11151c 100%);
+}
+.fwd-summary-badge {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.fwd-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.fwd-badge.faded { background: rgba(61, 186, 122, 0.18); color: #3dba7a; border: 1px solid #3dba7a; }
+.fwd-badge.widened { background: rgba(248, 81, 73, 0.18); color: #f85149; border: 1px solid #f85149; }
+.fwd-badge.neutral { background: rgba(139, 148, 158, 0.18); color: #8b949e; border: 1px solid var(--line); }
+
+.fwd-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+.fwd-card {
+  background: #11151c;
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  border-radius: 4px;
+}
+.fwd-card .fwd-card-title {
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.fwd-card .fwd-card-val {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 2px;
+  color: #fff;
+}
+.fwd-card .fwd-card-sub {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* Status pills for forward table */
+.fwd-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.fwd-pill.faded-full { background: rgba(61, 186, 122, 0.2); color: #3dba7a; }
+.fwd-pill.faded-part { background: rgba(57, 197, 207, 0.2); color: #39c5cf; }
+.fwd-pill.persisted { background: rgba(210, 153, 34, 0.2); color: #d29922; }
+.fwd-pill.widened { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+.fwd-pill.neutral { background: rgba(139, 148, 158, 0.2); color: #8b949e; }
+
 footer { padding: 14px 24px 30px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
 
 @media (max-width: 1080px) {

@@ -35,7 +35,7 @@ function indexRows() {
   }
 }
 
-/* ==================== STRATEGY DESK LOGIC (PRESERVED) ==================== */
+/* ==================== STRATEGY DESK LOGIC (PRESERVED & EXTENDED) ==================== */
 function decisionOf(row, zGate) {
   const reasons = [];
   const votes = {
@@ -203,8 +203,8 @@ function renderMeta() {
     ["Research end", m.train_end],
     ["Holdout", m.test_date],
     ["Dates", String(m.n_dates)],
+    ["Latest Data", DATA.dates[DATA.dates.length - 1]],
     ["Named structures", String(m.n_named || m.n_structures)],
-    ["All names", String(m.n_structures)],
     ["Frozen z", String(m.frozen_z)],
   ]
     .map(([k, v]) => `<div class="badge">${k}<b>${v}</b></div>`)
@@ -241,6 +241,29 @@ function renderCounts(date, zGate) {
   $("countStrip").innerHTML = chips.join("") + byKind;
 }
 
+function renderPostHoldoutChips(activeDate) {
+  const postDates = DATA.dates.filter((d) => d >= DATA.meta.test_date);
+  $("postHoldoutChips").innerHTML = postDates
+    .map((d) => {
+      const isHoldout = d === DATA.meta.test_date;
+      const isLatest = d === postDates[postDates.length - 1];
+      const label = isHoldout ? `${d.slice(5)} (Holdout)` : isLatest ? `${d.slice(5)} (Latest)` : d.slice(5);
+      const activeCls = d === activeDate ? "active" : "";
+      const holdCls = isHoldout ? "holdout-chip" : "";
+      return `<button type="button" class="date-chip ${holdCls} ${activeCls}" data-date="${d}">${label}</button>`;
+    })
+    .join("");
+
+  $("postHoldoutChips").querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const d = btn.getAttribute("data-date");
+      $("date").value = d;
+      refreshStructures();
+      render();
+    });
+  });
+}
+
 function render() {
   const structure = $("structure").value;
   const date = $("date").value;
@@ -250,6 +273,16 @@ function render() {
   const cat = catalogItem(structure);
   const dte = dteOn(date);
   const hist = statsOf(structure);
+
+  const kicker = $("verdictKicker");
+  if (kicker) {
+    kicker.textContent =
+      date === DATA.meta.test_date
+        ? "Frozen holdout (11 Sep 2026)"
+        : date > DATA.meta.test_date
+          ? `Out-of-sample evaluation (${date})`
+          : `Research period (${date})`;
+  }
 
   $("verdictLabel").textContent = v.label;
   $("verdictLabel").className = "verdict " + v.cls;
@@ -282,7 +315,7 @@ function render() {
     ["z20 / z60 / z120 / z252", `${fmt(row?.z_20_residual, 2)} / ${fmt(row?.z_60_residual, 2)} / ${fmt(row?.z_120_residual, 2)} / ${fmt(row?.z_252_residual, 2)}`],
     ["60d percentile", fmt(row?.pct_60_residual, 2)],
     ["Extrapolated?", row?.extrapolated ? "YES" : "no"],
-    ["Holdout date?", date === DATA.meta.test_date ? "YES — frozen, not used to tune" : date > DATA.meta.train_end ? "After research cut / gap" : "Research sample"],
+    ["Date Role", date === DATA.meta.test_date ? "Frozen holdout (signals only)" : date > DATA.meta.test_date ? "Post-holdout test evaluation" : "In-sample research"],
   ];
   $("snapTable").innerHTML = snap.map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join("");
 
@@ -311,6 +344,9 @@ function render() {
   renderCounts(date, zGate);
   drawChart(structure, date, $("compare").value);
   renderCross(date, zGate, structure);
+  renderPostHoldoutChips(date);
+  renderForwardTracker(structure, date, zGate);
+  renderPostHoldoutScanner(zGate);
 }
 
 function drawChart(structure, date, compare) {
@@ -384,6 +420,362 @@ function drawChart(structure, date, compare) {
     : `${structure} market (white) vs ensemble fair (blue dashed). Purple line = selected date.${hidNote}`;
 }
 
+/* ==================== FORWARD EVOLUTION & MARKET CORRECTION TRACKER ==================== */
+function renderForwardTracker(structure, selectedDate, zGate) {
+  const fwdLabel = $("fwdStructLabel");
+  const fwdStart = $("fwdStartLabel");
+  if (fwdLabel) fwdLabel.textContent = structure;
+  if (fwdStart) fwdStart.textContent = selectedDate;
+
+  // Filter all observations of this structure from selectedDate forward
+  const allRows = rowsFor(structure);
+  const fwdRows = allRows
+    .filter((r) => r.trade_date >= selectedDate)
+    .sort((a, b) => a.trade_date.localeCompare(b.trade_date));
+
+  if (!fwdRows.length) {
+    $("fwdKpis").innerHTML = `<div class="fwd-card" style="grid-column: 1/-1"><div class="fwd-card-sub">No observations found for ${structure} from ${selectedDate} onward.</div></div>`;
+    $("fwdTableBody").innerHTML = `<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--muted)">No forward observations available.</td></tr>`;
+    return;
+  }
+
+  const baseRow = fwdRows[0];
+  const baseResid = baseRow.residual;
+  const baseResidBp = finite(baseResid) ? baseResid * 10000 : 0;
+  const baseZ = baseRow.z_60_residual;
+  const baseDec = decisionOf(baseRow, zGate);
+
+  // Compute forward statistics
+  let maxFadeBp = 0;
+  let maxFadePct = 0;
+  let latestRec = fwdRows[fwdRows.length - 1];
+
+  const processedFwd = fwdRows.map((r, i) => {
+    const curResid = r.residual;
+    const curResidBp = finite(curResid) ? curResid * 10000 : 0;
+    const deltaResidBp = curResidBp - baseResidBp;
+    const z = r.z_60_residual;
+    const dec = decisionOf(r, zGate);
+
+    // Convergence = shrinkage of residual magnitude towards fair value (0)
+    let convergenceBp = 0;
+    let convergencePct = 0;
+    if (Math.abs(baseResidBp) > 1e-4) {
+      if (baseResidBp > 0) {
+        convergenceBp = -deltaResidBp;
+        convergencePct = (convergenceBp / baseResidBp) * 100;
+      } else {
+        convergenceBp = deltaResidBp;
+        convergencePct = (convergenceBp / Math.abs(baseResidBp)) * 100;
+      }
+    }
+
+    if (i > 0 && convergenceBp > maxFadeBp) {
+      maxFadeBp = convergenceBp;
+      maxFadePct = convergencePct;
+    }
+
+    // Status classification
+    let statusText = "Observation Base (Day 0)";
+    let statusCls = "neutral";
+    if (i > 0) {
+      if (Math.abs(curResidBp) <= 1.0 || (baseResidBp !== 0 && Math.sign(curResidBp) !== Math.sign(baseResidBp))) {
+        statusText = "✅ Reverted to Fair / Converged";
+        statusCls = "faded-full";
+      } else if (convergencePct >= 50) {
+        statusText = `⚡ Substantial Fade (${convergencePct.toFixed(0)}%)`;
+        statusCls = "faded-full";
+      } else if (convergencePct > 0) {
+        statusText = `📈 Partial Fade (${convergencePct.toFixed(0)}%)`;
+        statusCls = "faded-part";
+      } else if (convergencePct <= -50) {
+        statusText = `❌ Widened (${Math.abs(convergencePct).toFixed(0)}%)`;
+        statusCls = "widened";
+      } else {
+        statusText = `⚠️ Persistent Dislocation`;
+        statusCls = "persisted";
+      }
+    }
+
+    return {
+      r,
+      i,
+      date: r.trade_date,
+      curResidBp,
+      deltaResidBp,
+      convergenceBp,
+      convergencePct,
+      z,
+      dec,
+      statusText,
+      statusCls,
+    };
+  });
+
+  // Overall verdict for the structure over the period
+  const finalItem = processedFwd[processedFwd.length - 1];
+  let overallVerdict = "Stable / Near Fair";
+  let overallBadgeCls = "neutral";
+  if (Math.abs(baseResidBp) > 1.5) {
+    if (finalItem.convergencePct >= 60 || Math.abs(finalItem.curResidBp) <= 1.5) {
+      overallVerdict = `Market Corrected (${maxFadeBp >= 0 ? "+" : ""}${maxFadeBp.toFixed(1)} bp Fade)`;
+      overallBadgeCls = "faded";
+    } else if (finalItem.convergencePct < 0) {
+      overallVerdict = `Dislocation Persisted / Widened`;
+      overallBadgeCls = "widened";
+    } else {
+      overallVerdict = `Partial Mean-Reversion (${finalItem.convergencePct.toFixed(0)}%)`;
+      overallBadgeCls = "faded";
+    }
+  }
+
+  $("fwdSummaryBadge").innerHTML = `<span class="fwd-badge ${overallBadgeCls}">${overallVerdict}</span>`;
+
+  // Populate Forward KPI cards
+  const baseZStr = finite(baseZ) ? (baseZ >= 0 ? "+" : "") + baseZ.toFixed(2) + " σ" : "—";
+  $("fwdKpis").innerHTML = `
+    <div class="fwd-card">
+      <div class="fwd-card-title">Initial Dislocation (${selectedDate})</div>
+      <div class="fwd-card-val">${baseResidBp >= 0 ? "+" : ""}${baseResidBp.toFixed(1)} bp</div>
+      <div class="fwd-card-sub">z_60: <b>${baseZStr}</b> &middot; Gate ${zGate}: <b>${baseDec.label}</b></div>
+    </div>
+    <div class="fwd-card">
+      <div class="fwd-card-title">Max Forward Fade / Correction</div>
+      <div class="fwd-card-val" style="color:var(--cheap)">${maxFadeBp >= 0 ? "+" : ""}${maxFadeBp.toFixed(1)} bp</div>
+      <div class="fwd-card-sub">Faded <b>${maxFadePct.toFixed(1)}%</b> of edge towards fair value</div>
+    </div>
+    <div class="fwd-card">
+      <div class="fwd-card-title">Latest State (${latestRec.trade_date})</div>
+      <div class="fwd-card-val">${(latestRec.residual * 10000 >= 0 ? "+" : "") + (latestRec.residual * 10000).toFixed(1)} bp</div>
+      <div class="fwd-card-sub">Latest z_60: <b>${finite(latestRec.z_60_residual) ? latestRec.z_60_residual.toFixed(2) : "—"}</b> &middot; <b>${decisionOf(latestRec, zGate).label}</b></div>
+    </div>
+    <div class="fwd-card">
+      <div class="fwd-card-title">Forward Path Horizons</div>
+      <div class="fwd-card-val highlight-accent">${fwdRows.length - 1} <span style="font-size:13px;font-weight:400;color:var(--muted)">forward days</span></div>
+      <div class="fwd-card-sub">${selectedDate} &rarr; ${latestRec.trade_date}</div>
+    </div>
+  `;
+
+  // Draw Forward Chart
+  drawForwardTrackerChart(structure, selectedDate, zGate, processedFwd);
+
+  // Populate Forward Tracking Table
+  $("fwdTableBody").innerHTML = processedFwd
+    .map((item) => {
+      const horizon = item.i === 0 ? "Day 0 (Start)" : `+${item.i} trading day${item.i > 1 ? "s" : ""}`;
+      const changeStr = item.i === 0 ? "—" : (item.deltaResidBp >= 0 ? "+" : "") + item.deltaResidBp.toFixed(2) + " bp";
+      const convStr = item.i === 0 ? "—" : (item.convergenceBp >= 0 ? "+" : "") + item.convergenceBp.toFixed(2) + " bp (" + item.convergencePct.toFixed(0) + "%)";
+      const zStr = finite(item.z) ? item.z.toFixed(2) : "—";
+      const isStart = item.i === 0;
+
+      return `
+        <tr data-date="${item.date}" class="${isStart ? "active" : ""}">
+          <td><b>${horizon}</b></td>
+          <td><b>${item.date}</b></td>
+          <td>${fmt(item.r.market_value, 4)}</td>
+          <td>${fmt(item.r.fair_value, 4)}</td>
+          <td><b style="color:#fff">${(item.curResidBp >= 0 ? "+" : "") + item.curResidBp.toFixed(1)} bp</b></td>
+          <td style="color:${item.deltaResidBp <= 0 ? "var(--cheap)" : "var(--exp)"}">${changeStr}</td>
+          <td>${convStr}</td>
+          <td>${zStr}</td>
+          <td>${pill(item.dec)}</td>
+          <td><span class="fwd-pill ${item.statusCls}">${item.statusText}</span></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  $("fwdTableBody").querySelectorAll("tr").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      const d = tr.getAttribute("data-date");
+      $("date").value = d;
+      refreshStructures();
+      render();
+    });
+  });
+}
+
+function drawForwardTrackerChart(structure, selectedDate, zGate, processedFwd) {
+  const canvas = $("fwdChart");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  if (processedFwd.length < 2) {
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("Select an earlier date to view forward tracking (at least 2 days needed).", 60, h / 2);
+    return;
+  }
+
+  const resids = processedFwd.map((x) => x.curResidBp);
+  const zs = processedFwd.map((x) => x.z || 0);
+  const dates = processedFwd.map((x) => x.date);
+
+  const maxRes = Math.max(...resids, 2.0);
+  const minRes = Math.min(...resids, -2.0);
+  const boundRes = Math.max(Math.abs(maxRes), Math.abs(minRes)) * 1.25;
+
+  const pad = { l: 56, r: 24, t: 26, b: 34 };
+  const xAt = (i) => pad.l + (i / Math.max(processedFwd.length - 1, 1)) * (w - pad.l - pad.r);
+  const yResAt = (v) => pad.t + (1 - (v - (-boundRes)) / (2 * boundRes || 1)) * (h - pad.t - pad.b);
+
+  // Background Grid & Zero Fair Line
+  const yZero = yResAt(0);
+  ctx.strokeStyle = "rgba(48, 54, 61, 0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(w - pad.r, pad.t);
+  ctx.moveTo(pad.l, h - pad.b);
+  ctx.lineTo(w - pad.r, h - pad.b);
+  ctx.stroke();
+
+  // Zero Fair Value Line (Cyan dashed)
+  ctx.strokeStyle = "#39c5cf";
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, yZero);
+  ctx.lineTo(w - pad.r, yZero);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = "#39c5cf";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText("Fair (0 bp)", pad.l - 6, yZero + 4);
+
+  // Shaded positive/negative zones
+  ctx.fillStyle = "rgba(248, 81, 73, 0.04)";
+  ctx.fillRect(pad.l, pad.t, w - pad.l - pad.r, yZero - pad.t);
+  ctx.fillStyle = "rgba(61, 186, 122, 0.04)";
+  ctx.fillRect(pad.l, yZero, w - pad.l - pad.r, h - pad.b - yZero);
+
+  // Residual Path Line
+  ctx.strokeStyle = "#58a6ff";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  processedFwd.forEach((item, i) => {
+    const x = xAt(i);
+    const y = yResAt(item.curResidBp);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Draw points with outcome color
+  processedFwd.forEach((item, i) => {
+    const x = xAt(i);
+    const y = yResAt(item.curResidBp);
+
+    ctx.fillStyle = item.dec.label === "TRADE"
+      ? (item.dec.direction === "EXPENSIVE" ? "#f85149" : "#3dba7a")
+      : (i === 0 ? "#bc8cff" : "#8b949e");
+
+    ctx.beginPath();
+    ctx.arc(x, y, i === 0 ? 6.5 : 4.5, 0, 2 * Math.PI);
+    ctx.fill();
+
+    if (i === 0) {
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Label on points
+    ctx.fillStyle = "#fff";
+    ctx.font = "10.5px sans-serif";
+    ctx.textAlign = "center";
+    const textY = item.curResidBp >= 0 ? y - 10 : y + 16;
+    ctx.fillText(`${item.curResidBp >= 0 ? "+" : ""}${item.curResidBp.toFixed(1)}bp`, x, textY);
+  });
+
+  // X Axis Labels
+  ctx.fillStyle = "#8b949e";
+  ctx.font = "11px sans-serif";
+  processedFwd.forEach((item, i) => {
+    ctx.textAlign = "center";
+    ctx.fillText(item.date.slice(5), xAt(i), h - 12);
+  });
+}
+
+/* ==================== POST-HOLDOUT TRADE SCANNER ==================== */
+function renderPostHoldoutScanner(zGate) {
+  const postDates = DATA.dates.filter((d) => d >= DATA.meta.test_date);
+  const tbody = $("postHoldoutTableBody");
+  if (!tbody) return;
+
+  const rowsData = postDates.map((d) => {
+    const dayRows = BY_DATE[d] || [];
+    let trades = 0, notrades = 0, cannots = 0;
+    let topCheap = null, topExp = null;
+    let maxAbsZ = 0;
+
+    for (const r of dayRows) {
+      const v = decisionOf(r, zGate);
+      if (v.label === "TRADE") trades++;
+      else if (v.label === "NO TRADE") notrades++;
+      else cannots++;
+
+      if (finite(r.z_60_residual)) {
+        const az = Math.abs(r.z_60_residual);
+        if (az > maxAbsZ) maxAbsZ = az;
+        if (topCheap === null || r.z_60_residual < topCheap.z_60_residual) topCheap = r;
+        if (topExp === null || r.z_60_residual > topExp.z_60_residual) topExp = r;
+      }
+    }
+
+    const isHoldout = d === DATA.meta.test_date;
+    const roleText = isHoldout ? "Frozen Holdout" : "Out-of-sample Test";
+
+    return {
+      date: d,
+      roleText,
+      total: dayRows.length,
+      trades,
+      notrades,
+      cannots,
+      maxAbsZ,
+      topCheap,
+      topExp,
+    };
+  });
+
+  tbody.innerHTML = rowsData
+    .map((x) => {
+      const cheapStr = x.topCheap ? `${x.topCheap.structure} (z=${x.topCheap.z_60_residual.toFixed(2)})` : "—";
+      const expStr = x.topExp ? `${x.topExp.structure} (z=+${x.topExp.z_60_residual.toFixed(2)})` : "—";
+      const tradeBadge = x.trades > 0
+        ? `<span class="pill trade">${x.trades} TRADE${x.trades > 1 ? "S" : ""}</span>`
+        : `<span class="pill notrade">0 TRADES</span>`;
+
+      return `
+        <tr data-date="${x.date}" class="${x.date === $("date").value ? "active" : ""}">
+          <td><b>${x.date}</b></td>
+          <td><span style="color:${x.date === DATA.meta.test_date ? "var(--hold)" : "var(--muted)"}">${x.roleText}</span></td>
+          <td>${x.total}</td>
+          <td>${tradeBadge}</td>
+          <td style="color:var(--cheap)">${cheapStr}</td>
+          <td style="color:var(--exp)">${expStr}</td>
+          <td><b>${x.maxAbsZ.toFixed(2)} σ</b></td>
+          <td><button type="button" class="btn-inspect" data-date="${x.date}">Inspect Date</button></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  tbody.querySelectorAll("tr").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      const d = tr.getAttribute("data-date");
+      $("date").value = d;
+      refreshStructures();
+      render();
+    });
+  });
+}
+
 function renderCross(date, zGate, active) {
   const showListed = $("showListed").checked;
   const kind = $("kind").value;
@@ -447,10 +839,7 @@ function renderWF() {
 }
 
 /* ==================== VIEW 2: HISTORICAL DISTRIBUTION LAB ==================== */
-
-// Causal statistical calculator (ensures zero lookahead: reference H_t strictly < t)
 function computeCausalSeries(structure, metric = "market_value", windowType = "expanding") {
-  // If precomputed exists in DIST_DATA, use it directly
   if (DIST_DATA?.structures?.[structure]?.[metric]) {
     const list = DIST_DATA.structures[structure][metric];
     if (windowType === "expanding") return list;
@@ -463,7 +852,6 @@ function computeCausalSeries(structure, metric = "market_value", windowType = "e
     }));
   }
 
-  // Dynamic causal calculation from DATA.rows
   const rawRows = (BY_STRUCT[structure] || []).filter((r) => finite(r[metric])).sort((a, b) => a.trade_date.localeCompare(b.trade_date));
   const result = [];
   const history = [];
@@ -552,12 +940,10 @@ function renderDistributionLab() {
   const fullSeries = computeCausalSeries(structure, metric, windowType);
   if (!fullSeries.length) return;
 
-  // Set min/max on date picker
   $("distDate").min = fullSeries[0].trade_date;
   $("distDate").max = fullSeries[fullSeries.length - 1].trade_date;
 
   if (!targetDate || !fullSeries.some((r) => r.trade_date === targetDate)) {
-    // Default to 2026-08-04 or last date in Aug/Sep
     const augDays = fullSeries.filter((r) => r.trade_date.startsWith("2026-08"));
     targetDate = augDays.length >= 2 ? augDays[1].trade_date : fullSeries[fullSeries.length - 1].trade_date;
     $("distDate").value = targetDate;
@@ -566,7 +952,6 @@ function renderDistributionLab() {
   const currentRec = fullSeries.find((r) => r.trade_date === targetDate) || fullSeries[fullSeries.length - 1];
   const dteInfo = dteOn(targetDate);
 
-  // Meta Badges
   $("distMetaBadges").innerHTML = [
     ["Structure", structure],
     ["Metric", metric === "market_value" ? "Market IV" : "Residual"],
@@ -576,7 +961,6 @@ function renderDistributionLab() {
     .map(([k, v]) => `<div class="badge">${k}<b>${v}</b></div>`)
     .join("");
 
-  // KPI Banner
   const zClass = zClassification(currentRec.z_score);
   const pcts = finite(currentRec.percentile_rank) ? currentRec.percentile_rank.toFixed(1) + "%" : "—";
   const zStr = finite(currentRec.z_score) ? (currentRec.z_score >= 0 ? "+" : "") + currentRec.z_score.toFixed(2) + " σ" : "—";
@@ -644,15 +1028,11 @@ function renderDistributionLab() {
     </article>
   `;
 
-  // Draw Charts
   drawHistoricalDensityChart(currentRec);
   drawTimeSeriesEnvelopesChart(fullSeries, targetDate);
-
-  // Render Table
   renderDailyInspectionTable(fullSeries, targetDate);
 }
 
-/* Chart 1: Historical Frequency Density Curve & Today's Location */
 function drawHistoricalDensityChart(currentRec) {
   const canvas = $("distDensityCanvas");
   const ctx = canvas.getContext("2d");
@@ -660,7 +1040,6 @@ function drawHistoricalDensityChart(currentRec) {
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // Prior history array
   const prior = currentRec.prior_values || [];
   if (!prior.length || !finite(currentRec.mean_prior) || !finite(currentRec.std_prior)) {
     ctx.fillStyle = "#8b949e";
@@ -673,14 +1052,12 @@ function drawHistoricalDensityChart(currentRec) {
   const std = currentRec.std_prior;
   const val = currentRec.value;
 
-  // Chart range: [mean - 3.5*std, mean + 3.5*std] or bounds of min/max/val
   const minX = Math.min(...prior, val, mean - 3.2 * std);
   const maxX = Math.max(...prior, val, mean + 3.2 * std);
   const pad = { l: 56, r: 24, t: 40, b: 36 };
 
   const xAt = (v) => pad.l + ((v - minX) / (maxX - minX || 1e-6)) * (w - pad.l - pad.r);
 
-  // Create histogram bins
   const nBins = 28;
   const binWidth = (maxX - minX) / nBins;
   const bins = new Array(nBins).fill(0);
@@ -691,7 +1068,6 @@ function drawHistoricalDensityChart(currentRec) {
   const maxBin = Math.max(...bins, 1);
   const yAt = (count) => (h - pad.b) - (count / maxBin) * (h - pad.t - pad.b);
 
-  // Draw Grid lines
   ctx.strokeStyle = "rgba(48, 54, 61, 0.4)";
   ctx.lineWidth = 1;
   for (let k = 0; k <= 4; k++) {
@@ -702,7 +1078,6 @@ function drawHistoricalDensityChart(currentRec) {
     ctx.stroke();
   }
 
-  // Draw histogram bars (Prior Distribution)
   ctx.fillStyle = "rgba(88, 166, 255, 0.22)";
   ctx.strokeStyle = "rgba(88, 166, 255, 0.6)";
   for (let i = 0; i < nBins; i++) {
@@ -716,7 +1091,6 @@ function drawHistoricalDensityChart(currentRec) {
     ctx.strokeRect(bx1 + 1, by, Math.max(1, bx2 - bx1 - 2), bHeight);
   }
 
-  // Normal curve overlay
   ctx.beginPath();
   ctx.strokeStyle = "#39c5cf";
   ctx.lineWidth = 2;
@@ -724,7 +1098,6 @@ function drawHistoricalDensityChart(currentRec) {
   for (let i = 0; i <= normalPoints; i++) {
     const xv = minX + (i / normalPoints) * (maxX - minX);
     const normPdf = (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((xv - mean) / std, 2));
-    // Scale normal pdf to match histogram peak
     const scaledCount = normPdf * binWidth * prior.length;
     const px = xAt(xv);
     const py = yAt(scaledCount);
@@ -733,7 +1106,6 @@ function drawHistoricalDensityChart(currentRec) {
   }
   ctx.stroke();
 
-  // Draw Reference Lines: Mean & Standard Deviations
   function drawRef(xVal, color, dash, label) {
     if (xVal < minX || xVal > maxX) return;
     const px = xAt(xVal);
@@ -757,7 +1129,6 @@ function drawHistoricalDensityChart(currentRec) {
   drawRef(mean - 2 * std, "#f85149", [2, 2], "-2σ");
   drawRef(mean + 2 * std, "#3dba7a", [2, 2], "+2σ");
 
-  // Prominent Indicator for TODAY'S VALUE
   const tx = xAt(val);
   ctx.strokeStyle = "#bc8cff";
   ctx.lineWidth = 3;
@@ -766,13 +1137,11 @@ function drawHistoricalDensityChart(currentRec) {
   ctx.lineTo(tx, h - pad.b);
   ctx.stroke();
 
-  // Indicator Top Head / Tag
   ctx.fillStyle = "#bc8cff";
   ctx.beginPath();
   ctx.arc(tx, h - pad.b, 6, 0, 2 * Math.PI);
   ctx.fill();
 
-  // Flag callout at top
   const tagText = `Today (${currentRec.trade_date}): ${(val * 100).toFixed(2)}% [Z: ${(currentRec.z_score >= 0 ? "+" : "") + currentRec.z_score.toFixed(2)}σ | ${currentRec.percentile_rank.toFixed(1)}%]`;
   ctx.font = "bold 12px sans-serif";
   const tagW = ctx.measureText(tagText).width + 16;
@@ -788,7 +1157,6 @@ function drawHistoricalDensityChart(currentRec) {
   ctx.textAlign = "center";
   ctx.fillText(tagText, tagX, pad.t - 9);
 
-  // X-axis labels
   ctx.fillStyle = "#8b949e";
   ctx.font = "11px sans-serif";
   ctx.textAlign = "left";
@@ -796,7 +1164,6 @@ function drawHistoricalDensityChart(currentRec) {
   ctx.textAlign = "right";
   ctx.fillText(`Max: ${(maxX * 100).toFixed(1)}%`, w - pad.r, h - 12);
 
-  // Update caption
   $("distHistCaption").textContent = `Prior reference history N=${currentRec.n_prior} days (${currentRec.prior_start} → ${currentRec.prior_end}). Today's observation is marked in purple at ${(val * 100).toFixed(2)}%.`;
   $("distChartLegend").innerHTML = `
     <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span> Prior History Bins</span>
@@ -805,7 +1172,6 @@ function drawHistoricalDensityChart(currentRec) {
   `;
 }
 
-/* Chart 2: Daily Path with Causal Bollinger / Confidence Envelopes */
 function drawTimeSeriesEnvelopesChart(fullSeries, activeDate) {
   const canvas = $("distTrendCanvas");
   const ctx = canvas.getContext("2d");
@@ -832,7 +1198,6 @@ function drawTimeSeriesEnvelopesChart(fullSeries, activeDate) {
   const xAt = (i) => pad.l + (i / Math.max(series.length - 1, 1)) * (w - pad.l - pad.r);
   const yAt = (v) => pad.t + (1 - (v - minY) / (maxY - minY || 1e-6)) * (h - pad.t - pad.b);
 
-  // Background Grid
   ctx.strokeStyle = "rgba(48, 54, 61, 0.4)";
   ctx.lineWidth = 1;
   for (let k = 0; k <= 4; k++) {
@@ -899,7 +1264,7 @@ function drawTimeSeriesEnvelopesChart(fullSeries, activeDate) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Draw Actual RR_25D Values Line (Solid white)
+  // Draw Actual Values Line
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2.2;
   ctx.beginPath();
@@ -927,7 +1292,6 @@ function drawTimeSeriesEnvelopesChart(fullSeries, activeDate) {
     }
   }
 
-  // Active date vertical marker
   const activeIdx = dates.indexOf(activeDate);
   if (activeIdx >= 0) {
     ctx.strokeStyle = "#bc8cff";
@@ -940,7 +1304,6 @@ function drawTimeSeriesEnvelopesChart(fullSeries, activeDate) {
     ctx.setLineDash([]);
   }
 
-  // X Axis Labels
   ctx.fillStyle = "#8b949e";
   ctx.font = "11px sans-serif";
   ctx.textAlign = "left";
@@ -957,7 +1320,6 @@ function drawTimeSeriesEnvelopesChart(fullSeries, activeDate) {
   `;
 }
 
-/* Master Daily Inspection Table */
 function renderDailyInspectionTable(fullSeries, activeDate) {
   const q = ($("distTableSearch").value || "").trim().toLowerCase();
   const zFilter = $("distZFilter").value;
@@ -979,7 +1341,6 @@ function renderDailyInspectionTable(fullSeries, activeDate) {
         ? `<div class="pct-cell"><div class="pct-bar-wrap"><div class="pct-bar-fill" style="width:${Math.min(100, Math.max(0, r.percentile_rank))}%"></div></div><span class="pct-num">${pctVal}%</span></div>`
         : "—";
 
-      // Look up call/put IV from raw panel if available
       const rawRow = (BY_DATE[r.trade_date] || []).find((x) => x.structure === "POINT_25C");
       const rawPut = (BY_DATE[r.trade_date] || []).find((x) => x.structure === "POINT_25P");
       const cIv = rawRow ? (rawRow.market_value * 100).toFixed(2) + "%" : "—";
@@ -1089,11 +1450,9 @@ function switchTab(target) {
 }
 
 async function boot() {
-  // Load core panel
   const res = await fetch("data/panel.json");
   DATA = inflate(await res.json());
 
-  // Load precomputed distribution data if available
   try {
     const dRes = await fetch("data/distribution_analysis.json");
     if (dRes.ok) DIST_DATA = await dRes.json();
@@ -1127,10 +1486,33 @@ async function boot() {
   $("crossSearch").addEventListener("input", () => {
     renderCross($("date").value, Number($("zGate").value), $("structure").value);
   });
+
+  // Date Stepper & Quick Jump Buttons
   $("jumpTest").addEventListener("click", () => {
     $("date").value = DATA.meta.test_date;
     refreshStructures();
     render();
+  });
+  $("jumpLatest").addEventListener("click", () => {
+    $("date").value = DATA.dates[DATA.dates.length - 1];
+    refreshStructures();
+    render();
+  });
+  $("btnPrevDate").addEventListener("click", () => {
+    const curIdx = DATA.dates.indexOf($("date").value);
+    if (curIdx > 0) {
+      $("date").value = DATA.dates[curIdx - 1];
+      refreshStructures();
+      render();
+    }
+  });
+  $("btnNextDate").addEventListener("click", () => {
+    const curIdx = DATA.dates.indexOf($("date").value);
+    if (curIdx >= 0 && curIdx < DATA.dates.length - 1) {
+      $("date").value = DATA.dates[curIdx + 1];
+      refreshStructures();
+      render();
+    }
   });
 
   // Distribution Lab Events

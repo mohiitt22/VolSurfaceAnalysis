@@ -10,7 +10,7 @@
   <header class="top">
     <div>
       <h1>60DTE IV relative-value desk</h1>
-      <p class="sub">Quantitative research engine for 60-DTE option relative-value and causal historical distribution analytics.</p>
+      <p class="sub">Quantitative research engine for 60-DTE option relative-value, post-holdout forward tracking, and causal historical distribution analytics.</p>
     </div>
     <div class="badges" id="metaBadges"></div>
   </header>
@@ -25,7 +25,7 @@
     </button>
   </nav>
 
-  <!-- ==================== VIEW 1: STRATEGY DESK (ORIGINAL STRATEGY LOGIC PRESERVED) ==================== -->
+  <!-- ==================== VIEW 1: STRATEGY DESK ==================== -->
   <main id="viewStrategy" class="desk-view active">
     <section class="controls">
       <label>Kind
@@ -61,14 +61,26 @@
         <input id="showListed" type="checkbox" checked />
         Show listed strikes
       </label>
-      <button id="jumpTest" type="button">Jump to 11 Sep 2026</button>
+      <div class="post-holdout-bar">
+        <span class="stepper-label">Quick Jump:</span>
+        <button id="jumpTest" type="button" class="btn-highlight">11 Sep (Holdout)</button>
+        <button id="jumpLatest" type="button" class="btn-highlight">22 Sep (Latest)</button>
+        <button id="btnPrevDate" type="button" title="Previous Trading Day">&larr;</button>
+        <button id="btnNextDate" type="button" title="Next Trading Day">&rarr;</button>
+      </div>
+    </section>
+
+    <!-- Post-Holdout Stepper Chips (11 Sep -> Latest) -->
+    <section class="post-holdout-strip">
+      <span class="strip-label">Post-Holdout Dates (11 Sep &rarr; 22 Sep):</span>
+      <div class="date-chips-wrap" id="postHoldoutChips"></div>
     </section>
 
     <section class="counts" id="countStrip"></section>
 
     <section class="verdict-row">
       <article class="verdict-card" id="verdictCard">
-        <div class="kicker">Frozen decision</div>
+        <div class="kicker" id="verdictKicker">Frozen decision</div>
         <div class="verdict" id="verdictLabel">Loading panel…</div>
         <div class="direction" id="verdictDir"></div>
         <p class="why" id="verdictWhy"></p>
@@ -98,6 +110,77 @@
       </article>
     </section>
 
+    <!-- ==================== FORWARD EVOLUTION & MARKET CORRECTION TRACKER ==================== -->
+    <section class="panel wide forward-panel" id="forwardTrackerSection">
+      <div class="panel-header">
+        <div>
+          <h2>Forward Evolution &amp; Market Correction Tracker (<span id="fwdStructLabel">RR_25D</span> &middot; <span id="fwdStartLabel">11 Sep 2026</span> &rarr; Latest)</h2>
+          <p class="caption" id="fwdTrackerCaption">
+            Tracks this structure across subsequent future dates. Evaluates whether the market corrected / faded the dislocation towards fair value, persisted, or overshot to rich.
+          </p>
+        </div>
+        <div class="fwd-summary-badge" id="fwdSummaryBadge"></div>
+      </div>
+
+      <!-- Forward Summary KPI Grid -->
+      <div class="fwd-kpis" id="fwdKpis"></div>
+
+      <!-- Forward Canvas Chart -->
+      <div class="fwd-chart-wrap" style="margin: 14px 0;">
+        <canvas id="fwdChart" width="920" height="260"></canvas>
+      </div>
+
+      <!-- Forward Tracking Table -->
+      <div class="table-wrap" style="max-height: 280px;">
+        <table class="data" id="fwdTable">
+          <thead>
+            <tr>
+              <th>Forward Horizon</th>
+              <th>Trade Date</th>
+              <th>Market Value</th>
+              <th>Ensemble Fair</th>
+              <th>Residual (bp)</th>
+              <th>&Delta; Residual (bp)</th>
+              <th>Convergence / Fade</th>
+              <th>z_60 Residual</th>
+              <th>Decision @ Gate</th>
+              <th>Market Correction Status</th>
+            </tr>
+          </thead>
+          <tbody id="fwdTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== POST-HOLDOUT TRADE SCANNER (11 SEP -> LATEST) ==================== -->
+    <section class="panel wide" id="postHoldoutScannerSection">
+      <div class="panel-header">
+        <div>
+          <h2>Post-Holdout Dislocation Scanner (11 Sep 2026 &rarr; Latest Available Date)</h2>
+          <p class="caption">
+            Overview of signal counts, top cheap structures, and top expensive structures for each date from 11 Sep onwards. Click any date row to inspect it.
+          </p>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height: 280px;">
+        <table class="data" id="postHoldoutTable">
+          <thead>
+            <tr>
+              <th>Trade Date</th>
+              <th>Role</th>
+              <th>Total Scored</th>
+              <th>Trades @ Gate</th>
+              <th>Top Cheap Dislocation</th>
+              <th>Top Expensive Dislocation</th>
+              <th>Max |z_60|</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="postHoldoutTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel wide">
       <h2>Cross-section on selected date</h2>
       <p class="caption">Same day, every structure in the expanded book. Click a row to load it. Colour is TRADE / NO TRADE / CANNOT DECIDE at the current z-gate. Listed-strike z uses a 0.02 log-moneyness bin, not raw K over time.</p>
@@ -124,7 +207,7 @@
     </section>
   </main>
 
-  <!-- ==================== VIEW 2: HISTORICAL DISTRIBUTION ANALYSIS (DEDICATED ANALYSIS LAB) ==================== -->
+  <!-- ==================== VIEW 2: HISTORICAL DISTRIBUTION LAB ==================== -->
   <main id="viewDistribution" class="desk-view" style="display:none;">
     <section class="analysis-hero">
       <div class="hero-left">
