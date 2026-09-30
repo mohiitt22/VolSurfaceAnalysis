@@ -265,7 +265,6 @@ def main() -> None:
     print("loading surfaces…")
     raw = pd.read_csv(src, usecols=use)
     raw["trade_date"] = pd.to_datetime(raw["trade_date"]).dt.strftime("%Y-%m-%d")
-    raw = raw.loc[raw["trade_date"] <= TEST_DATE]
     print("dates", raw["trade_date"].nunique(), "rows", len(raw))
 
     rows = []
@@ -282,8 +281,6 @@ def main() -> None:
     dte["trade_date"] = pd.to_datetime(dte["trade_date"]).dt.strftime("%Y-%m-%d")
     dte_slim = []
     for r in dte.itertuples(index=False):
-        if r.trade_date > TEST_DATE:
-            continue
         dte_slim.append(
             {
                 "trade_date": r.trade_date,
