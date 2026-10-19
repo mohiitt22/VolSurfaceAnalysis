@@ -169,12 +169,18 @@ def _butterflies(surface: pd.DataFrame, cfg: ResearchConfig) -> list[dict]:
         fair = 0.5 * (_fair(surface, d, "put", cfg) + _fair(surface, d, "call", cfg)) - _fair(
             surface, 0.5, "atm", cfg
         )
-        # Price butterfly: +1 put +1 call - 2 ATM straddle/2
+        # Price butterfly: +1 put +1 call - ATM straddle.
+        # atm.price is already half-straddle (0.5*(call+put)), so 2*atm.price
+        # is the full ATM straddle. Fair side must match: C_atm + P_atm, not 2*C.
+        atm_fair_iv = _fair(surface, 0.5, "atm", cfg)
         mkt_px = p.price + c.price - 2.0 * atm.price
         fair_px = (
             _model_price(surface, p, "P", _fair(surface, d, "put", cfg))
             + _model_price(surface, c, "C", _fair(surface, d, "call", cfg))
-            - 2.0 * _model_price(surface, atm, "C", _fair(surface, 0.5, "atm", cfg))
+            - (
+                _model_price(surface, atm, "C", atm_fair_iv)
+                + _model_price(surface, atm, "P", atm_fair_iv)
+            )
         )
         rows.append(
             _scalar_structure(

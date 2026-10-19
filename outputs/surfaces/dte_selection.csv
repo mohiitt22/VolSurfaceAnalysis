@@ -316,3 +316,10 @@ trade_date,selected_expiry,actual_dte,target_dte,dte_error,abs_dte_error,n_candi
 2026-09-09,2026-11-03 18:00:00,56,60,-4,4,43,28,False,False,ODSNP1CX26,2026-09-09 16:00:00,put_call_parity_atm_median,signed_negative
 2026-09-10,2026-11-05 18:00:00,57,60,-3,3,43,31,False,False,OWSNP1EX26,2026-09-10 16:00:00,put_call_parity_atm_median,signed_negative
 2026-09-11,2026-11-05 18:00:00,56,60,-4,4,43,31,False,False,OWSNP1EX26,2026-09-11 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-14,2026-11-19 18:00:00,67,60,7,7,43,72,False,True,OMAMSNPX26,2026-09-14 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-15,2026-11-19 18:00:00,66,60,6,6,43,71,False,False,OMAMSNPX26,2026-09-15 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-16,2026-11-19 18:00:00,65,60,5,5,43,72,False,False,OMAMSNPX26,2026-09-16 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-17,2026-11-19 18:00:00,64,60,4,4,42,71,False,False,OMAMSNPX26,2026-09-17 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-18,2026-11-19 18:00:00,63,60,3,3,42,72,False,False,OMAMSNPX26,2026-09-18 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-21,2026-11-19 18:00:00,60,60,0,0,43,71,True,False,OMAMSNPX26,2026-09-21 16:00:00,put_call_parity_atm_median,signed_negative
+2026-09-22,2026-11-19 18:00:00,59,60,-1,1,44,72,False,False,OMAMSNPX26,2026-09-22 16:00:00,put_call_parity_atm_median,signed_negative

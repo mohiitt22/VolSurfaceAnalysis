@@ -44,10 +44,10 @@ def annotate_cheap_expensive(df: pd.DataFrame) -> pd.DataFrame:
     out["cheap_executable"] = out["residual_exec"] < 0
     out["expensive_executable"] = out["residual_exec"] > 0
 
-    # Regime split: high/low ATM IV if present as a column.
+    # Regime split: high/low ATM IV vs that day's cross-sectional median.
     if "atm_iv" in out.columns:
-        med = out.groupby("trade_date")["atm_iv"].transform("median") if False else out["atm_iv"]
-        out["high_iv_regime"] = out["atm_iv"] > out["atm_iv"].median()
+        day_med = out.groupby("trade_date")["atm_iv"].transform("median")
+        out["high_iv_regime"] = out["atm_iv"] > day_med
     return out
 
 

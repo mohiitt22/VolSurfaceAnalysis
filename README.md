@@ -58,3 +58,19 @@ See `outputs/reports/A_data_quality_report.md` after Phase 1.  Highlights:
 Cheap ≠ low IV.  Cheap ≠ below SVI.  A trade requires residual + history +
 model agreement + liquidity + predicted convergence + cost-aware edge.
 **NO TRADE** is a valid output.
+
+---
+
+## SPX Fixed-Strike Butterfly Volatility Lab (Level, Skew & Curvature Simulation)
+
+An interactive Streamlit research environment for analyzing how independent and combined implied volatility smile perturbations (**Level, Skew, and Curvature**) propagate to fixed-strike OTM butterfly spreads at constant spot, strike, and maturity.
+
+```bash
+# Run Streamlit dashboard
+streamlit run app.py --server.port 8501
+
+# Run automated tests including factor invariants
+pytest
+```
+See [`spx-fly-dashboard/README.md`](file:///c:/Users/mohit.singh/OneDrive%20-%20hertshtengroup.com/Desktop/VolSurfaceAnalysis/spx-fly-dashboard/README.md) for full mathematical documentation and invariant proofs.
+
