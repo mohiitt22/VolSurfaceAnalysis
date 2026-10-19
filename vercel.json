@@ -2,5 +2,5 @@
   "framework": null,
   "installCommand": "echo skip",
   "buildCommand": "echo skip",
-  "outputDirectory": "dashboard"
+  "outputDirectory": "public"
 }
