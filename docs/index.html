@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>60DTE IV Relative-Value Desk &amp; Distribution Lab</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>60DTE IV relative-value desk</h1>
+      <p class="sub">Quantitative research engine for 60-DTE option relative-value, post-holdout forward tracking, and causal historical distribution analytics.</p>
+    </div>
+    <div class="badges" id="metaBadges"></div>
+  </header>
+
+  <!-- Top-Level Navigation Bar: Seamless switching between Strategy Desk and Distribution Lab under 1 URL -->
+  <nav class="main-nav">
+    <button class="nav-tab active" id="tabStrategy" type="button">
+      <span class="tab-icon">🎯</span> Strategy Desk (60-DTE Relative Value)
+    </button>
+    <button class="nav-tab" id="tabDistribution" type="button">
+      <span class="tab-icon">📊</span> Historical Distribution Analysis (RR 25D &amp; Skew)
+    </button>
+  </nav>
+
+  <!-- ==================== VIEW 1: STRATEGY DESK ==================== -->
+  <main id="viewStrategy" class="desk-view active">
+    <section class="controls">
+      <label>Kind
+        <select id="kind"></select>
+      </label>
+      <label>Structure
+        <select id="structure"></select>
+      </label>
+      <label>Date
+        <input id="date" type="date" />
+      </label>
+      <label>Z gate
+        <select id="zGate">
+          <option value="1">1.0</option>
+          <option value="1.5">1.5 (analysis)</option>
+          <option value="2">2.0</option>
+          <option value="2.5">2.5</option>
+          <option value="3" selected>3.0 (frozen)</option>
+        </select>
+      </label>
+      <label>Decision
+        <select id="decisionFilter">
+          <option value="all">all</option>
+          <option value="TRADE">TRADE</option>
+          <option value="NO TRADE">NO TRADE</option>
+          <option value="CANNOT DECIDE">CANNOT DECIDE</option>
+        </select>
+      </label>
+      <label>Compare
+        <select id="compare"><option value="">— none —</option></select>
+      </label>
+      <label class="check">
+        <input id="showListed" type="checkbox" checked />
+        Show listed strikes
+      </label>
+      <div class="post-holdout-bar">
+        <span class="stepper-label">Quick Jump:</span>
+        <button id="jumpTest" type="button" class="btn-highlight">11 Sep (Holdout)</button>
+        <button id="jumpLatest" type="button" class="btn-highlight">22 Sep (Latest)</button>
+        <button id="btnPrevDate" type="button" title="Previous Trading Day">&larr;</button>
+        <button id="btnNextDate" type="button" title="Next Trading Day">&rarr;</button>
+      </div>
+    </section>
+
+    <!-- Post-Holdout Stepper Chips (11 Sep -> Latest) -->
+    <section class="post-holdout-strip">
+      <span class="strip-label">Post-Holdout Dates (11 Sep &rarr; 22 Sep):</span>
+      <div class="date-chips-wrap" id="postHoldoutChips"></div>
+    </section>
+
+    <section class="counts" id="countStrip"></section>
+
+    <section class="verdict-row">
+      <article class="verdict-card" id="verdictCard">
+        <div class="kicker" id="verdictKicker">Frozen decision</div>
+        <div class="verdict" id="verdictLabel">Loading panel…</div>
+        <div class="direction" id="verdictDir"></div>
+        <p class="why" id="verdictWhy"></p>
+        <ul class="reasons" id="verdictReasons"></ul>
+      </article>
+      <article class="defs" id="defCards"></article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Selected structure path</h2>
+        <p class="caption" id="chartCaption">Market value vs ensemble fair · residual z overlay</p>
+        <canvas id="chart" width="920" height="320"></canvas>
+      </article>
+      <article class="panel">
+        <h2>Snapshot</h2>
+        <table class="kv" id="snapTable"></table>
+      </article>
+      <article class="panel">
+        <h2>Regime that day</h2>
+        <table class="kv" id="regimeTable"></table>
+        <p class="caption">IV &gt; RV is a risk premium / jump premium feature, not automatic richness.</p>
+      </article>
+      <article class="panel">
+        <h2>Historical behaviour of this structure</h2>
+        <table class="kv" id="histTable"></table>
+      </article>
+    </section>
+
+    <!-- ==================== FORWARD EVOLUTION & MARKET CORRECTION TRACKER ==================== -->
+    <section class="panel wide forward-panel" id="forwardTrackerSection">
+      <div class="panel-header">
+        <div>
+          <h2>Forward Evolution &amp; Market Correction Tracker (<span id="fwdStructLabel">RR_25D</span> &middot; <span id="fwdStartLabel">11 Sep 2026</span> &rarr; Latest)</h2>
+          <p class="caption" id="fwdTrackerCaption">
+            Tracks this structure across subsequent future dates. Evaluates whether the market corrected / faded the dislocation towards fair value, persisted, or overshot to rich.
+          </p>
+        </div>
+        <div class="fwd-summary-badge" id="fwdSummaryBadge"></div>
+      </div>
+
+      <!-- Forward Summary KPI Grid -->
+      <div class="fwd-kpis" id="fwdKpis"></div>
+
+      <!-- Forward Canvas Chart -->
+      <div class="fwd-chart-wrap" style="margin: 14px 0;">
+        <canvas id="fwdChart" width="920" height="260"></canvas>
+      </div>
+
+      <!-- Forward Tracking Table -->
+      <div class="table-wrap" style="max-height: 280px;">
+        <table class="data" id="fwdTable">
+          <thead>
+            <tr>
+              <th>Forward Horizon</th>
+              <th>Trade Date</th>
+              <th>Market Value</th>
+              <th>Ensemble Fair</th>
+              <th>Residual (bp)</th>
+              <th>&Delta; Residual (bp)</th>
+              <th>Convergence / Fade</th>
+              <th>z_60 Residual</th>
+              <th>Decision @ Gate</th>
+              <th>Market Correction Status</th>
+            </tr>
+          </thead>
+          <tbody id="fwdTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== POST-HOLDOUT TRADE SCANNER (11 SEP -> LATEST) ==================== -->
+    <section class="panel wide" id="postHoldoutScannerSection">
+      <div class="panel-header">
+        <div>
+          <h2>Post-Holdout Dislocation Scanner (11 Sep 2026 &rarr; Latest Available Date)</h2>
+          <p class="caption">
+            Overview of signal counts, top cheap structures, and top expensive structures for each date from 11 Sep onwards. Click any date row to inspect it.
+          </p>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height: 280px;">
+        <table class="data" id="postHoldoutTable">
+          <thead>
+            <tr>
+              <th>Trade Date</th>
+              <th>Role</th>
+              <th>Total Scored</th>
+              <th>Trades @ Gate</th>
+              <th>Top Cheap Dislocation</th>
+              <th>Top Expensive Dislocation</th>
+              <th>Max |z_60|</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="postHoldoutTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Cross-section on selected date</h2>
+      <p class="caption">Same day, every structure in the expanded book. Click a row to load it. Colour is TRADE / NO TRADE / CANNOT DECIDE at the current z-gate. Listed-strike z uses a 0.02 log-moneyness bin, not raw K over time.</p>
+      <label class="inline">Search
+        <input id="crossSearch" type="search" placeholder="RR_25D, SLOPE, STRIKE_7700…" />
+      </label>
+      <div class="table-wrap">
+        <table class="data" id="crossTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Walk-forward IC (research period only)</h2>
+      <p class="caption">Ridge on 5-day residual convergence. Unstable IC is why the frozen book is allowed to say NO TRADE.</p>
+      <div class="table-wrap">
+        <table class="data" id="wfTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== VIEW 2: HISTORICAL DISTRIBUTION LAB ==================== -->
+  <main id="viewDistribution" class="desk-view" style="display:none;">
+    <section class="analysis-hero">
+      <div class="hero-left">
+        <h2>Historical Distribution Lab &middot; 25-Delta Risk Reversal</h2>
+        <p class="sub">
+          Strictly causal, zero-lookahead distribution analysis. For any date <em>t</em>, the reference distribution
+          is formed strictly from trading days prior to <em>t</em> (&lt; <em>t</em>). Evaluates where today's skew lies
+          in standard deviations (Z-score) and historical percentile rank.
+        </p>
+      </div>
+      <div class="hero-badges" id="distMetaBadges"></div>
+    </section>
+
+    <section class="controls dist-controls">
+      <label>Structure
+        <select id="distStructure">
+          <option value="RR_25D" selected>RR_25D (+25DC / -25DP Skew)</option>
+          <option value="RR_10D">RR_10D (+10DC / -10DP Wing Skew)</option>
+          <option value="RR_15D">RR_15D (+15DC / -15DP Skew)</option>
+          <option value="RR_20D">RR_20D (+20DC / -20DP Skew)</option>
+          <option value="RR_30D">RR_30D (+30DC / -30DP Skew)</option>
+          <option value="BF_25D">BF_25D (25D Fly / Convexity)</option>
+          <option value="BF_10D">BF_10D (10D Wing Fly)</option>
+          <option value="BF_20D">BF_20D (20D Fly)</option>
+          <option value="ATM_IV">ATM_IV (ATM Vol Level)</option>
+        </select>
+      </label>
+      <label>Metric
+        <select id="distMetric">
+          <option value="market_value" selected>Market Value (Implied Volatility / Skew)</option>
+          <option value="residual">Model Residual (Market IV - Fair Smile)</option>
+        </select>
+      </label>
+      <label>Historical Baseline Window
+        <select id="distWindow">
+          <option value="expanding" selected>Full Expanding History (&lt; Date)</option>
+          <option value="rolling60">Rolling 60 Days (&lt; Date)</option>
+          <option value="rolling120">Rolling 120 Days (&lt; Date)</option>
+        </select>
+      </label>
+      <label>Selected Date
+        <input id="distDate" type="date" />
+      </label>
+      <div class="filter-btn-group">
+        <span class="group-label">Quick Periods:</span>
+        <button type="button" class="btn-chip active" id="btnFilterAugSep">Aug &amp; Sep 2026</button>
+        <button type="button" class="btn-chip" id="btnFilterAug">August 2026</button>
+        <button type="button" class="btn-chip" id="btnFilterSep">September 2026</button>
+        <button type="button" class="btn-chip" id="btnFilterAll">All History</button>
+      </div>
+    </section>
+
+    <!-- Key Metrics KPI Cards for the Selected Day -->
+    <section class="kpi-banner" id="distKpiBanner"></section>
+
+    <!-- Distribution Visualizer Charts Grid -->
+    <section class="grid dist-grid">
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Causal Historical Distribution Profile</h2>
+            <p class="caption" id="distHistCaption">Frequency distribution of days strictly prior to selected date &middot; Today's location</p>
+          </div>
+          <div class="chart-legend" id="distChartLegend"></div>
+        </div>
+        <canvas id="distDensityCanvas" width="920" height="340"></canvas>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Trajectory &amp; Historical Confidence Bands</h2>
+            <p class="caption" id="distTrendCaption">Daily path across August &amp; September 2026 with causal &plusmn;1&sigma; and &plusmn;2&sigma; envelopes</p>
+          </div>
+          <div class="chart-legend" id="distTrendLegend"></div>
+        </div>
+        <canvas id="distTrendCanvas" width="920" height="340"></canvas>
+      </article>
+    </section>
+
+    <!-- Daily Inspection Table -->
+    <section class="panel wide">
+      <div class="table-header-row">
+        <div>
+          <h2>Daily Inspection Table &middot; August &amp; September 2026 (through Sep 22)</h2>
+          <p class="caption">
+            Click any row to load that day's distribution profile and confidence intervals.
+            All statistics are strictly causal: day <em>t</em> is compared strictly to days prior to <em>t</em>.
+          </p>
+        </div>
+        <div class="table-actions">
+          <label class="inline">
+            Search:
+            <input id="distTableSearch" type="search" placeholder="Filter date or value..." />
+          </label>
+          <label class="inline">
+            Z Filter:
+            <select id="distZFilter">
+              <option value="all">All Z-Scores</option>
+              <option value="gt1">|Z| &ge; 1.0 &sigma;</option>
+              <option value="gt15">|Z| &ge; 1.5 &sigma;</option>
+              <option value="gt2">|Z| &ge; 2.0 &sigma; (Extremes)</option>
+            </select>
+          </label>
+          <button id="btnExportCsv" type="button" class="btn-action">Download CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap dist-table-wrap">
+        <table class="data" id="distTable">
+          <thead>
+            <tr>
+              <th>Trade Date</th>
+              <th>DTE</th>
+              <th>Spot</th>
+              <th>Forward</th>
+              <th>Call IV (25D)</th>
+              <th>Put IV (25D)</th>
+              <th>RR 25D Value</th>
+              <th>Prior Days (N)</th>
+              <th>Prior Mean (&mu;)</th>
+              <th>Prior Std (&sigma;)</th>
+              <th>Z-Score (&sigma;)</th>
+              <th>Percentile Rank</th>
+              <th>Prior Range [Min, Max]</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="distTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    60-DTE Relative-Value Framework &middot; Training 2025-06-05 &rarr; 2026-09-08. Holdout 11 Sep 2026 frozen.
+    Data available through 2026-09-22. Dynamic historical distribution analysis is strictly causal with zero forward lookahead.
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
