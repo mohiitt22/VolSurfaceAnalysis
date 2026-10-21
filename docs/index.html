@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>60DTE IV Relative-Value Desk &amp; Distribution Lab</title>
+  <title>VolSurface Desk — Relative Value, Distribution &amp; SPX Butterfly Lab</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -22,6 +22,9 @@
     </button>
     <button class="nav-tab" id="tabDistribution" type="button">
       <span class="tab-icon">📊</span> Historical Distribution Analysis (RR 25D &amp; Skew)
+    </button>
+    <button class="nav-tab" id="tabSurface" type="button">
+      <span class="tab-icon">📈</span> SPX Surface &amp; Butterfly Lab
     </button>
   </nav>
 
@@ -339,6 +342,15 @@
         </table>
       </div>
     </section>
+  </main>
+
+  <main id="viewSurface" class="desk-view" style="display:none;">
+    <iframe
+      id="surfaceFrame"
+      class="surface-frame"
+      title="SPX Volatility Surface and Butterfly Lab"
+      src="about:blank"
+    ></iframe>
   </main>
 
   <footer>

@@ -409,10 +409,14 @@ function drawChart(structure, date, compare) {
   }
   ctx.fillStyle = "#9aa3ad";
   ctx.font = "11px Segoe UI";
+  ctx.textAlign = "left";
   ctx.fillText(dates[0], pad.l, h - 8);
-  ctx.fillText(dates[dates.length - 1], w - 90, h - 8);
-  ctx.fillText(fmt(ymax, 3), 4, pad.t + 8);
-  ctx.fillText(fmt(ymin, 3), 4, h - pad.b);
+  ctx.textAlign = "right";
+  ctx.fillText(dates[dates.length - 1], w - pad.r, h - 8);
+  ctx.textAlign = "right";
+  ctx.fillText(fmt(ymax, 3), pad.l - 6, pad.t + 10);
+  ctx.fillText(fmt(ymin, 3), pad.l - 6, h - pad.b);
+  ctx.textAlign = "left";
   const own = rowsFor(structure)[0];
   const hidNote = own && own.kind === "listed_strike" ? ` Chart is the ${own.history_id} k-bin path used for z.` : "";
   $("chartCaption").textContent = compare
@@ -684,20 +688,34 @@ function drawForwardTrackerChart(structure, selectedDate, zGate, processedFwd) {
       ctx.stroke();
     }
 
-    // Label on points
-    ctx.fillStyle = "#fff";
-    ctx.font = "10.5px sans-serif";
-    ctx.textAlign = "center";
-    const textY = item.curResidBp >= 0 ? y - 10 : y + 16;
-    ctx.fillText(`${item.curResidBp >= 0 ? "+" : ""}${item.curResidBp.toFixed(1)}bp`, x, textY);
   });
 
-  // X Axis Labels
+  // Value labels only where they have room, so neighbouring prints do not stack.
+  ctx.fillStyle = "#fff";
+  ctx.font = "10.5px sans-serif";
+  ctx.textAlign = "center";
+  let lastLabelX = -1e9;
+  processedFwd.forEach((item, i) => {
+    const x = xAt(i);
+    const end = i === 0 || i === processedFwd.length - 1;
+    if (!end && x - lastLabelX < 42) return;
+    const y = yResAt(item.curResidBp);
+    const textY = item.curResidBp >= 0 ? y - 10 : y + 16;
+    ctx.fillText(`${item.curResidBp >= 0 ? "+" : ""}${item.curResidBp.toFixed(1)}bp`, x, textY);
+    lastLabelX = x;
+  });
+
+  // X axis: first, last, and dates that clear the previous label.
   ctx.fillStyle = "#8b949e";
   ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  let lastDateX = -1e9;
   processedFwd.forEach((item, i) => {
-    ctx.textAlign = "center";
-    ctx.fillText(item.date.slice(5), xAt(i), h - 12);
+    const x = xAt(i);
+    const end = i === 0 || i === processedFwd.length - 1;
+    if (!end && x - lastDateX < 48) return;
+    ctx.fillText(item.date.slice(5), x, h - 12);
+    lastDateX = x;
   });
 }
 
@@ -1054,7 +1072,7 @@ function drawHistoricalDensityChart(currentRec) {
 
   const minX = Math.min(...prior, val, mean - 3.2 * std);
   const maxX = Math.max(...prior, val, mean + 3.2 * std);
-  const pad = { l: 56, r: 24, t: 40, b: 36 };
+  const pad = { l: 64, r: 28, t: 72, b: 40 };
 
   const xAt = (v) => pad.l + ((v - minX) / (maxX - minX || 1e-6)) * (w - pad.l - pad.r);
 
@@ -1106,6 +1124,7 @@ function drawHistoricalDensityChart(currentRec) {
   }
   ctx.stroke();
 
+  const placedLabels = [];
   function drawRef(xVal, color, dash, label) {
     if (xVal < minX || xVal > maxX) return;
     const px = xAt(xVal);
@@ -1120,7 +1139,19 @@ function drawHistoricalDensityChart(currentRec) {
     ctx.fillStyle = color;
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, px, pad.t - 8);
+    const tw = ctx.measureText(label).width;
+    let y = 16;
+    let guard = 0;
+    while (
+      placedLabels.some((p) => Math.abs(p.x - px) < (p.w + tw) / 2 + 10 && Math.abs(p.y - y) < 14) &&
+      guard < 4
+    ) {
+      y += 14;
+      guard += 1;
+    }
+    const drawX = Math.min(w - pad.r - tw / 2, Math.max(pad.l + tw / 2, px));
+    placedLabels.push({ x: drawX, y, w: tw });
+    ctx.fillText(label, drawX, y);
   }
 
   drawRef(mean, "#f0f6fc", [4, 4], `Mean μ: ${(mean * 100).toFixed(2)}%`);
@@ -1142,20 +1173,30 @@ function drawHistoricalDensityChart(currentRec) {
   ctx.arc(tx, h - pad.b, 6, 0, 2 * Math.PI);
   ctx.fill();
 
-  const tagText = `Today (${currentRec.trade_date}): ${(val * 100).toFixed(2)}% [Z: ${(currentRec.z_score >= 0 ? "+" : "") + currentRec.z_score.toFixed(2)}σ | ${currentRec.percentile_rank.toFixed(1)}%]`;
-  ctx.font = "bold 12px sans-serif";
-  const tagW = ctx.measureText(tagText).width + 16;
-  const tagX = Math.min(w - pad.r - tagW / 2, Math.max(pad.l + tagW / 2, tx));
+  const tagText = `Today ${currentRec.trade_date.slice(5)}  ${(val * 100).toFixed(2)}%`;
+  ctx.font = "bold 11px sans-serif";
+  const tagW = ctx.measureText(tagText).width + 12;
+  let tagX = Math.min(w - pad.r - tagW / 2, Math.max(pad.l + tagW / 2, tx));
+  let tagY = h - pad.b - 22;
+  let tagGuard = 0;
+  while (
+    placedLabels.some((p) => Math.abs(p.x - tagX) < (p.w + tagW) / 2 + 8 && Math.abs(p.y - tagY) < 16) &&
+    tagGuard < 3
+  ) {
+    tagY -= 16;
+    tagGuard += 1;
+  }
+  placedLabels.push({ x: tagX, y: tagY, w: tagW });
 
   ctx.fillStyle = "#1e1730";
   ctx.strokeStyle = "#bc8cff";
   ctx.lineWidth = 1.5;
-  ctx.fillRect(tagX - tagW / 2, pad.t - 24, tagW, 22);
-  ctx.strokeRect(tagX - tagW / 2, pad.t - 24, tagW, 22);
+  ctx.fillRect(tagX - tagW / 2, tagY - 12, tagW, 18);
+  ctx.strokeRect(tagX - tagW / 2, tagY - 12, tagW, 18);
 
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
-  ctx.fillText(tagText, tagX, pad.t - 9);
+  ctx.fillText(tagText, tagX, tagY);
 
   ctx.fillStyle = "#8b949e";
   ctx.font = "11px sans-serif";
@@ -1432,20 +1473,26 @@ function inflate(payload) {
 
 function switchTab(target) {
   CURRENT_TAB = target;
-  if (target === "strategy") {
-    $("tabStrategy").classList.add("active");
-    $("tabDistribution").classList.remove("active");
-    $("viewStrategy").style.display = "block";
-    $("viewDistribution").style.display = "none";
-    window.location.hash = "#strategy";
-    render();
-  } else {
-    $("tabStrategy").classList.remove("active");
-    $("tabDistribution").classList.add("active");
-    $("viewStrategy").style.display = "none";
-    $("viewDistribution").style.display = "block";
-    window.location.hash = "#distribution";
-    renderDistributionLab();
+  const panes = [
+    ["strategy", "tabStrategy", "viewStrategy"],
+    ["distribution", "tabDistribution", "viewDistribution"],
+    ["surface", "tabSurface", "viewSurface"],
+  ];
+  for (const [name, tabId, viewId] of panes) {
+    const on = name === target;
+    const tab = $(tabId);
+    const view = $(viewId);
+    if (tab) tab.classList.toggle("active", on);
+    if (view) view.style.display = on ? "block" : "none";
+  }
+  document.body.classList.toggle("show-surface", target === "surface");
+  const hash = target === "distribution" ? "#distribution" : target === "surface" ? "#surface" : "#strategy";
+  if (window.location.hash !== hash) window.location.hash = hash;
+  if (target === "strategy") render();
+  else if (target === "distribution") renderDistributionLab();
+  else {
+    const frame = $("surfaceFrame");
+    if (frame && frame.getAttribute("src") === "about:blank") frame.setAttribute("src", "surface/index.html");
   }
 }
 
@@ -1468,13 +1515,19 @@ async function boot() {
   // Tab switching events
   $("tabStrategy").addEventListener("click", () => switchTab("strategy"));
   $("tabDistribution").addEventListener("click", () => switchTab("distribution"));
+  $("tabSurface").addEventListener("click", () => switchTab("surface"));
+  window.addEventListener("hashchange", () => {
+    const next = window.location.hash === "#distribution"
+      ? "distribution"
+      : window.location.hash === "#surface"
+        ? "surface"
+        : "strategy";
+    if (next !== CURRENT_TAB) switchTab(next);
+  });
 
-  // Check URL hash
-  if (window.location.hash === "#distribution") {
-    switchTab("distribution");
-  } else {
-    switchTab("strategy");
-  }
+  if (window.location.hash === "#distribution") switchTab("distribution");
+  else if (window.location.hash === "#surface") switchTab("surface");
+  else switchTab("strategy");
 
   // Strategy Desk Events
   ["kind", "structure", "date", "zGate", "compare", "decisionFilter", "showListed"].forEach((id) => {

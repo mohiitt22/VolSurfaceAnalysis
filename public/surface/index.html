@@ -84,7 +84,7 @@
       margin: 0 auto;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       flex-wrap: wrap;
       gap: 16px;
     }
@@ -115,7 +115,9 @@
       letter-spacing: -0.3px;
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
+      line-height: 1.35;
     }
 
     .brand-text p {
@@ -137,11 +139,13 @@
     /* Tabs */
     .tab-nav {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       background: var(--bg-card);
       padding: 4px;
       border-radius: 10px;
       border: 1px solid var(--border-subtle);
+      max-width: 100%;
     }
 
     .tab-btn {
@@ -156,6 +160,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      white-space: nowrap;
       transition: all 0.2s ease;
     }
 
@@ -1493,7 +1498,7 @@ Total Vol P&amp;L:    ΔF_total = ΔF_L + ΔF_S + ΔF_C + ΔF_ε
         },
         paper_bgcolor: 'transparent',
         plot_bgcolor: '#090d16',
-        margin: { l: 55, r: 25, t: 45, b: 50 },
+        margin: { l: 68, r: 28, t: 48, b: 88 },
         font: { family: 'Inter', color: '#8b949e', size: 11 },
         hovermode: 'x unified',
         xaxis: {
@@ -1522,10 +1527,11 @@ Total Vol P&amp;L:    ΔF_total = ΔF_L + ΔF_S + ΔF_C + ΔF_ε
         },
         legend: {
           orientation: 'h',
-          y: 1.12,
-          x: 0.02,
+          y: -0.28,
+          x: 0,
+          yanchor: 'top',
           font: { size: 11, color: '#f0f6fc' },
-          bgcolor: 'rgba(19, 24, 35, 0.7)',
+          bgcolor: 'rgba(9, 13, 22, 0)',
         },
       };
     }

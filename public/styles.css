@@ -48,6 +48,7 @@ h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; colo
 /* Top Navigation Tabs */
 .main-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 24px;
   background: #11151c;
@@ -63,8 +64,10 @@ h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; colo
   padding: 9px 18px;
   font-size: 13.5px;
   font-weight: 600;
+  line-height: 1.3;
   border-radius: 6px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease-in-out;
 }
 .nav-tab:hover {
@@ -380,9 +383,19 @@ canvas { width: 100%; height: auto; background: #0c0f14; border: 1px solid var(-
 .post-holdout-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-left: auto;
 }
+.surface-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 132px);
+  min-height: 760px;
+  border: 0;
+  background: #090d16;
+}
+body.show-surface footer { display: none; }
 .stepper-label {
   font-size: 11px;
   color: var(--muted);
@@ -524,4 +537,7 @@ footer { padding: 14px 24px 30px; color: var(--muted); font-size: 12px; border-t
   .dist-grid { grid-template-columns: 1fr; }
   .verdict-row, .grid { grid-template-columns: 1fr; }
   .table-header-row { flex-direction: column; align-items: flex-start; }
+  .post-holdout-bar { margin-left: 0; width: 100%; }
+  .analysis-hero, .panel-header, .top { flex-wrap: wrap; }
+  .nav-tab { white-space: normal; }
 }
