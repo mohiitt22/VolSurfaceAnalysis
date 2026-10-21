@@ -235,7 +235,7 @@ function renderCounts(date, zGate) {
   const byKind = kinds
     .map((k) => {
       const x = c.byKind[k];
-      return `<div class="count muted">${k}<b>${x.TRADE}</b> T · ${x["NO TRADE"]} N · ${x["CANNOT DECIDE"]} C</div>`;
+      return `<div class="count muted"><span class="count-name">${k}</span><b>${x.TRADE}</b><span>T · ${x["NO TRADE"]} N · ${x["CANNOT DECIDE"]} C</span></div>`;
     })
     .join("");
   $("countStrip").innerHTML = chips.join("") + byKind;

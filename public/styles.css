@@ -172,8 +172,16 @@ canvas { width: 100%; height: auto; background: #0c0f14; border: 1px solid var(-
 .count.trade b { color: var(--cheap); }
 .count.notrade b { color: #8b949e; }
 .count.undecided b { color: var(--undecided); }
-.count.muted { font-size: 11px; }
-.count.muted b { display: inline; font-size: 11px; }
+.count.muted {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.count.muted b { display: inline; font-size: 12px; }
+.count-name { color: var(--text); font-weight: 650; }
 .controls .check { flex-direction: row; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 13px; }
 .inline { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .inline input { min-width: 180px; }
