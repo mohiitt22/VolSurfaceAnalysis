@@ -230,6 +230,25 @@ def handle_fly_get(path: str, query: dict) -> dict:
             wing=wing,
             spread_width=spread_width,
         )
+    if path == "/api/fly/hold":
+        start = query.get("start_date", [""])[0]
+        hold_days = int(query.get("hold_days", ["10"])[0] or 10)
+        hour = query.get("hour", [None])[0] or None
+        expiry = query.get("expiry", [None])[0] or None
+        target = float(query.get("target_dte", ["60"])[0] or 60)
+        wing = float(query.get("wing", ["100"])[0] or 100)
+        spread = query.get("spread_width", [None])[0]
+        spread_width = float(spread) if spread not in (None, "") else None
+        return fly_source.hold_path(
+            folder,
+            start,
+            hold_days=hold_days,
+            hour=hour,
+            expiry=expiry or None,
+            target_dte=target,
+            wing=wing,
+            spread_width=spread_width,
+        )
     return {"ok": False, "error": f"Unknown fly endpoint {path}"}
 
 

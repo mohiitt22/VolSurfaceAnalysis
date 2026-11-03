@@ -1,6 +1,6 @@
 /* Fly Analysis tab — hourly parquet folders, day A/B smile / fly / spread compare. */
 (function () {
-  const READY = "upload-v1";
+  const READY = "hold-v2";
   const state = {
     folder: "",
     folders: [],
@@ -8,6 +8,7 @@
     filesByDate: new Map(),
     rowCache: new Map(),
     source: "upload",
+    view: "compare", // compare | hold
     dateA: null,
     dateB: null,
     hour: null,
@@ -23,8 +24,19 @@
     align: "offset",
     focusStrike: null,
     compare: null,
+    // Same-contract hold path
+    holdDate: null,
+    holdDays: 10,
+    holdHour: null,
+    holdTargetDte: 60,
+    holdExpiryMode: "target",
+    holdExpiry: "",
+    holdMeta: null,
+    holdFocusStrike: "all", // "all" or numeric K/offset
+    holdPath: null,
     busy: false,
     error: "",
+    holdError: "",
     note: "Choose your SNP data folder from this computer (files named YYYY-MM-DD.parquet).",
   };
 
@@ -58,6 +70,20 @@
     const node = el(id);
     if (!node || !window.Plotly) return;
     Plotly.react(node, traces, layout(title, x, y), { responsive: true, displayModeBar: false });
+  }
+
+  function barPlot(id, xs, ys, title, xlab, ylab, texts) {
+    const colors = (ys || []).map((v) => (Number(v) >= 0 ? "#3dba7a" : "#f85149"));
+    plot(id, [{
+      type: "bar",
+      x: xs,
+      y: ys,
+      text: texts || ys.map((v) => fmt(v, 3)),
+      textposition: "outside",
+      marker: { color: colors },
+      name: "Δ",
+      hovertemplate: "%{x}<br>%{y:.4f}<extra></extra>",
+    }], title, xlab, ylab);
   }
 
   function xLabel() {
@@ -127,7 +153,16 @@
         <div id="faFolderNote" class="sa-summary"></div>
       </section>
       <section class="sa-block">
-        <h2>Date, hour, expiry</h2>
+        <h2>Analysis mode</h2>
+        <div class="sa-nav">
+          <button type="button" id="faModeCompare" class="fa-mode-btn active">Day vs day compare</button>
+          <button type="button" id="faModeHold" class="fa-mode-btn">Same-contract hold path</button>
+        </div>
+        <p class="sa-note" id="faModeNote">Day vs day: pick two sessions and compare smiles / flies / spreads.</p>
+      </section>
+      <div id="faPanelCompare">
+      <section class="sa-block">
+        <h2>Day vs day — date, hour, expiry</h2>
         <div class="sa-controls">
           <label>Reference date A <select id="faDateA"></select></label>
           <label>Comparison date B <select id="faDateB"></select></label>
@@ -224,7 +259,111 @@
         <h2>Detail tables</h2>
         <div class="sa-scroll"><table id="faFlyTable"></table></div>
         <div class="sa-scroll" style="margin-top:12px"><table id="faSpreadTable"></table></div>
-      </section>`;
+      </section>
+      </div>
+
+      <div id="faPanelHold" style="display:none">
+      <section class="sa-block">
+        <h2>Same-contract hold path</h2>
+        <p class="sa-note">Pick <b>one</b> entry day and a ~60 DTE expiry. That calendar expiry is locked. The next 1–10 trading sessions reuse the <b>same contract</b> (DTE falls by about one each session). Track how spot, smile, fly and spread values evolve while you hold it.</p>
+        <div class="sa-controls">
+          <label>Entry date <select id="fhDate"></select></label>
+          <label>Hold days ahead
+            <select id="fhHoldDays">
+              ${[1,2,3,4,5,6,7,8,9,10].map((n) => `<option value="${n}" ${n === 10 ? "selected" : ""}>${n}</option>`).join("")}
+            </select>
+          </label>
+          <label>Hour snapshot <select id="fhHour"></select></label>
+          <label>Target DTE
+            <input id="fhTargetDte" type="number" min="1" max="365" step="1" value="60" />
+          </label>
+          <label>Expiry mode
+            <select id="fhExpiryMode">
+              <option value="target">Closest to target DTE on entry day</option>
+              <option value="manual">Pick expiry on entry day</option>
+            </select>
+          </label>
+          <label>Locked expiry <select id="fhExpiry"></select></label>
+          <label>Fly wing
+            <select id="fhWing">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="150">150</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+          <label>Spread width
+            <select id="fhSpreadWidth">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="150">150</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+          <label>Side
+            <select id="fhSide">
+              <option value="call">Calls</option>
+              <option value="put">Puts</option>
+            </select>
+          </label>
+          <label>Align structures
+            <select id="fhAlign">
+              <option value="offset">ATM-offset wise</option>
+              <option value="strike">Strike-wise (fixed K)</option>
+            </select>
+          </label>
+          <label>Strike scope
+            <select id="fhFocusStrike"></select>
+          </label>
+        </div>
+        <div class="sa-nav">
+          <button type="button" id="fhPrev">Previous entry day</button>
+          <button type="button" id="fhNext">Next entry day</button>
+          <button type="button" id="fhRun">Run hold path</button>
+        </div>
+        <div id="fhSummary" class="sa-summary"></div>
+        <p id="fhWarn" class="sa-warn"></p>
+      </section>
+      <section class="sa-block">
+        <h2>Hold path — spot &amp; DTE</h2>
+        <div id="fhSpot" class="sa-summary"></div>
+        <div id="fhSpotChart" class="sa-chart"></div>
+        <div id="fhDteChart" class="sa-chart"></div>
+        <div id="fhLevelChart" class="sa-chart"></div>
+      </section>
+      <section class="sa-block">
+        <h2>Hold path — smile (entry vs last hold day)</h2>
+        <div id="fhSmile" class="sa-chart"></div>
+        <div id="fhSmileChg" class="sa-chart"></div>
+        <div id="fhSmileBar" class="sa-chart"></div>
+      </section>
+      <section class="sa-block" id="fhAllBlock">
+        <h2>Hold path — all-strike premium analysis</h2>
+        <p class="sa-note">Every available fly / spread on the locked expiry. Curves show entry vs last hold day; bars show premium change (last − entry) across all strikes.</p>
+        <div id="fhAllCards" class="sa-summary"></div>
+        <div id="fhFlyCurve" class="sa-chart"></div>
+        <div id="fhFlyBar" class="sa-chart"></div>
+        <div id="fhIvFlyBar" class="sa-chart"></div>
+        <div id="fhSpreadCurve" class="sa-chart"></div>
+        <div id="fhSpreadBar" class="sa-chart"></div>
+        <div class="sa-scroll"><table id="fhAllTable"></table></div>
+      </section>
+      <section class="sa-block" id="fhOneBlock">
+        <h2>Hold path — individual strike path</h2>
+        <p class="sa-note">Track one absolute strike (strike-wise) or one ATM offset (offset-wise) across the hold window.</p>
+        <div id="fhFocusCards" class="sa-summary"></div>
+        <div id="fhFlyPath" class="sa-chart"></div>
+        <div id="fhFlyPathBar" class="sa-chart"></div>
+        <div id="fhIvFlyPath" class="sa-chart"></div>
+        <div id="fhSpreadPath" class="sa-chart"></div>
+        <div id="fhSpreadPathBar" class="sa-chart"></div>
+        <div class="sa-scroll"><table id="fhFocusTable"></table></div>
+      </section>
+      <section class="sa-block">
+        <h2>Hold path — session table</h2>
+        <div class="sa-scroll"><table id="fhDaysTable"></table></div>
+      </section>
+      </div>`;
   }
 
   function ensureStyle() {
@@ -249,6 +388,7 @@
       .sa-scroll th,.sa-scroll td{border-bottom:1px solid #21262d;padding:6px 8px;text-align:right;white-space:nowrap}
       .sa-scroll th:first-child,.sa-scroll td:first-child{text-align:left}
       .fa-focus-row{background:rgba(88,166,255,0.08)}
+      .fa-mode-btn.active{border-color:#58a6ff;color:#fff;background:#1f6feb33}
       #viewFly{padding:0 24px 32px;max-width:1400px;margin:0 auto}
       #faPath{min-width:280px}
     `;
@@ -297,6 +437,8 @@
     state.metaA = null;
     state.metaB = null;
     state.compare = null;
+    state.holdMeta = null;
+    state.holdPath = null;
   }
 
   function shiftDate(iso, step) {
@@ -323,8 +465,9 @@
   }
 
   function fillDates() {
-    for (const id of ["faDateA", "faDateB"]) {
+    for (const id of ["faDateA", "faDateB", "fhDate"]) {
       const node = el(id);
+      if (!node) continue;
       node.innerHTML = state.dates.map((d) => `<option value="${d}">${d}</option>`).join("");
     }
     if (!state.dateA || !state.dates.includes(state.dateA)) {
@@ -333,8 +476,26 @@
     if (!state.dateB || !state.dates.includes(state.dateB)) {
       state.dateB = state.dates[state.dates.length - 1] || null;
     }
-    el("faDateA").value = state.dateA || "";
-    el("faDateB").value = state.dateB || "";
+    if (!state.holdDate || !state.dates.includes(state.holdDate)) {
+      state.holdDate = state.dates[Math.max(0, state.dates.length - 11)] || state.dates[0] || null;
+    }
+    if (el("faDateA")) el("faDateA").value = state.dateA || "";
+    if (el("faDateB")) el("faDateB").value = state.dateB || "";
+    if (el("fhDate")) el("fhDate").value = state.holdDate || "";
+  }
+
+  function setView(view) {
+    state.view = view;
+    const compareOn = view === "compare";
+    if (el("faPanelCompare")) el("faPanelCompare").style.display = compareOn ? "" : "none";
+    if (el("faPanelHold")) el("faPanelHold").style.display = compareOn ? "none" : "";
+    if (el("faModeCompare")) el("faModeCompare").classList.toggle("active", compareOn);
+    if (el("faModeHold")) el("faModeHold").classList.toggle("active", !compareOn);
+    if (el("faModeNote")) {
+      el("faModeNote").textContent = compareOn
+        ? "Day vs day: pick two sessions and compare smiles / flies / spreads."
+        : "Same-contract hold: pick one entry day and a ~60 DTE expiry, then track that locked expiry over the next 1–10 trading sessions.";
+    }
   }
 
   function commonHours() {
@@ -438,7 +599,9 @@
       fillFolders();
       fillDates();
       await loadMeta();
-      await runCompare();
+      await loadHoldMeta();
+      if (state.view === "hold") await runHoldPath();
+      else await runCompare();
     } catch (err) {
       state.error = String(err.message || err);
     } finally {
@@ -456,6 +619,7 @@
     }
     state.busy = true;
     state.error = "";
+    state.holdError = "";
     paintWarn();
     try {
       const first = input.files[0];
@@ -464,9 +628,12 @@
       fillFolders();
       fillDates();
       await loadMeta();
-      await runCompare();
+      await loadHoldMeta();
+      if (state.view === "hold") await runHoldPath();
+      else await runCompare();
     } catch (err) {
       state.error = String(err.message || err);
+      state.holdError = state.error;
     } finally {
       state.busy = false;
       paintWarn();
@@ -542,7 +709,404 @@
   }
 
   function paintWarn() {
-    el("faWarn").textContent = state.error || (state.busy ? "Working…" : "");
+    if (el("faWarn")) el("faWarn").textContent = state.error || (state.busy && state.view === "compare" ? "Working…" : "");
+    if (el("fhWarn")) el("fhWarn").textContent = state.holdError || (state.busy && state.view === "hold" ? "Working…" : "");
+  }
+
+  async function loadHoldMeta() {
+    if (!state.holdDate) return;
+    const target = state.holdTargetDte;
+    if (state.source === "upload") {
+      const rows = await rowsFor(state.holdDate);
+      state.holdMeta = window.FlyClient.dayMetaFromRows(state.holdDate, rows, target);
+    } else {
+      state.holdMeta = await api(`/api/fly/meta?date=${encodeURIComponent(state.holdDate)}&target_dte=${target}`);
+    }
+    fillHoldHours();
+    fillHoldExpiries();
+  }
+
+  function fillHoldHours() {
+    const hours = (state.holdMeta && state.holdMeta.hours) || [];
+    if (!el("fhHour")) return;
+    el("fhHour").innerHTML = hours.map((h) => `<option value="${h}">${h}</option>`).join("");
+    if (!state.holdHour || !hours.includes(state.holdHour)) {
+      state.holdHour = hours[hours.length - 1] || null;
+    }
+    if (state.holdHour) el("fhHour").value = state.holdHour;
+  }
+
+  function fillHoldExpiries() {
+    if (!el("fhExpiry")) return;
+    const hour = state.holdHour;
+    const pack = hour && state.holdMeta && state.holdMeta.by_hour ? state.holdMeta.by_hour[hour] : null;
+    const ex = (pack && pack.expiries) || [];
+    el("fhExpiry").innerHTML = ex.map((e) =>
+      `<option value="${e.expiry}">${e.expiry} (${e.dte} DTE)</option>`
+    ).join("");
+    if (state.holdExpiryMode === "target") {
+      state.holdExpiry = (pack && pack.default_expiry) || (ex[0] && ex[0].expiry) || "";
+    }
+    if (state.holdExpiry) el("fhExpiry").value = state.holdExpiry;
+    el("fhExpiry").disabled = state.holdExpiryMode === "target";
+  }
+
+  function holdSideRows(dayPack, key) {
+    const side = state.side === "both" ? "call" : state.side;
+    // hold panel uses fhSide; mirror into a local side if present
+    const holdSide = el("fhSide") ? el("fhSide").value : side;
+    return (dayPack[holdSide + "_" + key] || []).map((r) => ({ ...r, side: holdSide }));
+  }
+
+  function holdAlign() {
+    return el("fhAlign") ? el("fhAlign").value : state.align;
+  }
+
+  function findHoldStructure(dayPack, kind, focus) {
+    const rows = holdSideRows(dayPack, kind === "fly" ? "flies" : "spreads");
+    if (!rows.length) return null;
+    const align = holdAlign();
+    if (focus == null) return rows[0];
+    if (align === "strike") {
+      const field = kind === "fly" ? "centre" : "near";
+      return rows.find((r) => Number(r[field]) === Number(focus)) || null;
+    }
+    return rows.find((r) => Number(r.offset) === Number(focus)) || null;
+  }
+
+  function availableHoldFocus() {
+    const path = state.holdPath;
+    if (!path || !path.days || !path.days.length) return [];
+    const align = holdAlign();
+    const set = new Set();
+    path.days.forEach((day) => {
+      holdSideRows(day, "flies").forEach((r) => set.add(align === "strike" ? Number(r.centre) : Number(r.offset)));
+      holdSideRows(day, "spreads").forEach((r) => set.add(align === "strike" ? Number(r.near) : Number(r.offset)));
+    });
+    return [...set].filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  }
+
+  function fillHoldFocus() {
+    const node = el("fhFocusStrike");
+    if (!node) return;
+    const values = availableHoldFocus();
+    const label = holdAlign() === "strike" ? "K" : "offset";
+    node.innerHTML = `<option value="all">All strikes</option>` + values.map((v) =>
+      `<option value="${v}">${label} ${v}</option>`
+    ).join("");
+    if (state.holdFocusStrike === "all" || state.holdFocusStrike == null || state.holdFocusStrike === "") {
+      state.holdFocusStrike = "all";
+      node.value = "all";
+    } else if (values.includes(Number(state.holdFocusStrike))) {
+      node.value = String(state.holdFocusStrike);
+    } else {
+      state.holdFocusStrike = "all";
+      node.value = "all";
+    }
+  }
+
+  function holdKeyField(kind) {
+    if (holdAlign() === "strike") return kind === "fly" ? "centre" : "near";
+    return "offset";
+  }
+
+  function matchHoldStructures(dayA, dayB, kind) {
+    const field = holdKeyField(kind);
+    const rowsA = holdSideRows(dayA, kind === "fly" ? "flies" : "spreads");
+    const mapB = new Map();
+    holdSideRows(dayB, kind === "fly" ? "flies" : "spreads").forEach((r) => mapB.set(Number(r[field]), r));
+    return rowsA.map((r) => {
+      const key = Number(r[field]);
+      const other = mapB.get(key);
+      return other ? { key, a: r, b: other } : null;
+    }).filter(Boolean).sort((x, y) => x.key - y.key);
+  }
+
+  function isAllStrikes() {
+    return state.holdFocusStrike === "all" || state.holdFocusStrike === "" || state.holdFocusStrike == null;
+  }
+
+  async function runHoldPath() {
+    if (!state.holdDate) return;
+    state.busy = true;
+    state.holdError = "";
+    paintWarn();
+    try {
+      const opts = {
+        holdDays: state.holdDays,
+        hour: state.holdHour,
+        targetDte: state.holdTargetDte,
+        wing: Number(el("fhWing") ? el("fhWing").value : state.wing),
+        spreadWidth: Number(el("fhSpreadWidth") ? el("fhSpreadWidth").value : state.spreadWidth),
+        expiry: state.holdExpiryMode === "manual" ? state.holdExpiry : null,
+      };
+      if (state.source === "upload") {
+        state.holdPath = await window.FlyClient.buildHoldPath(
+          state.dates,
+          (day) => rowsFor(day),
+          state.holdDate,
+          opts,
+        );
+      } else {
+        const params = new URLSearchParams({
+          start_date: state.holdDate,
+          hold_days: String(state.holdDays),
+          target_dte: String(state.holdTargetDte),
+          wing: String(opts.wing),
+          spread_width: String(opts.spreadWidth),
+        });
+        if (state.holdHour) params.set("hour", state.holdHour);
+        if (state.holdExpiryMode === "manual" && state.holdExpiry) params.set("expiry", state.holdExpiry);
+        state.holdPath = await api("/api/fly/hold?" + params.toString());
+      }
+      if (state.holdPath.warnings && state.holdPath.warnings.length) {
+        state.holdError = state.holdPath.warnings.slice(0, 3).join(" · ");
+      }
+      fillHoldFocus();
+      paintHoldAll();
+    } catch (err) {
+      state.holdError = String(err.message || err);
+      state.holdPath = null;
+    } finally {
+      state.busy = false;
+      paintWarn();
+    }
+  }
+
+  function paintHoldAll() {
+    const path = state.holdPath;
+    if (!path || !el("fhSummary")) return;
+    const days = path.days || [];
+    const first = days[0];
+    const last = days[days.length - 1];
+    const align = holdAlign();
+    const xLabelHold = align === "strike" ? "Strike" : "ATM offset";
+    const allMode = isAllStrikes();
+
+    if (el("fhAllBlock")) el("fhAllBlock").style.display = allMode ? "" : "none";
+    if (el("fhOneBlock")) el("fhOneBlock").style.display = allMode ? "none" : "";
+
+    el("fhSummary").innerHTML = [
+      ["Entry", path.start_date],
+      ["Locked expiry", path.locked_expiry],
+      ["Hour", path.hour],
+      ["Hold days", `${path.hold_days_available} / ${path.hold_days_requested}`],
+      ["DTE path", `${fmt(path.dte_start, 0)} → ${fmt(path.dte_end, 0)}`],
+      ["Strike scope", allMode ? "All strikes" : String(state.holdFocusStrike)],
+      ["Sessions", days.length],
+    ].map(([k, v]) => `<span><em>${k}</em>${v}</span>`).join("");
+
+    el("fhSpot").innerHTML = [
+      ["Spot entry", first ? fmt(first.spot, 2) : "—"],
+      ["Spot last", last ? fmt(last.spot, 2) : "—"],
+      ["Δ Spot", fmt(path.spot_move, 2)],
+      ["Δ Spot %", path.spot_move_pct == null ? "—" : fmt(path.spot_move_pct, 3) + "%"],
+      ["Level entry", first ? fmt(first.level, 3) : "—"],
+      ["Level last", last ? fmt(last.level, 3) : "—"],
+    ].map(([k, v]) => `<span><em>${k}</em>${v}</span>`).join("");
+
+    const xs = days.map((d) => d.hold_day);
+    const xDates = days.map((d) => `${d.hold_day}: ${d.date}`);
+    plot("fhSpotChart", [{
+      x: xs, y: days.map((d) => d.spot), text: xDates, mode: "lines+markers", name: "Spot",
+      line: { color: "#58a6ff" },
+    }], "Spot along hold path", "Hold day", "Spot");
+    plot("fhDteChart", [{
+      x: xs, y: days.map((d) => d.dte), text: xDates, mode: "lines+markers", name: "DTE",
+      line: { color: "#3dba7a" },
+    }], "DTE of locked expiry", "Hold day", "DTE");
+    plot("fhLevelChart", [{
+      x: xs, y: days.map((d) => d.level), text: xDates, mode: "lines+markers", name: "ATM IV",
+      line: { color: "#d29922" },
+    }], "ATM IV (level) along hold path", "Hold day", "IV (vol pts)");
+
+    if (first && last) {
+      const smileA = first.smile || [];
+      const smileB = last.smile || [];
+      const xOfSmile = (r) => align === "strike" ? r.strike : r.offset;
+      plot("fhSmile", [
+        { x: smileA.map(xOfSmile), y: smileA.map((r) => r.iv), mode: "lines+markers", name: `Entry ${first.date}`, line: { color: "#58a6ff" } },
+        { x: smileB.map(xOfSmile), y: smileB.map((r) => r.iv), mode: "lines+markers", name: `Hold+${last.hold_day} ${last.date}`, line: { color: "#3dba7a" } },
+      ], "Smile: entry vs last hold day", xLabelHold, "IV");
+      const mapB = new Map(smileB.map((r) => [String(xOfSmile(r)), r]));
+      const matched = smileA.map((r) => {
+        const b = mapB.get(String(xOfSmile(r)));
+        return b ? { x: xOfSmile(r), a: r, b } : null;
+      }).filter(Boolean);
+      const smileDx = matched.map((r) => r.b.iv - r.a.iv);
+      plot("fhSmileChg", [{
+        x: matched.map((r) => r.x),
+        y: smileDx,
+        mode: "lines+markers",
+        name: "Last − entry",
+        line: { color: "#d29922" },
+      }], "Smile change over hold (line)", xLabelHold, "Δ IV");
+      barPlot("fhSmileBar", matched.map((r) => r.x), smileDx,
+        "Smile IV change bar (last − entry)", xLabelHold, "Δ IV");
+    }
+
+    if (allMode && first && last) {
+      const flies = matchHoldStructures(first, last, "fly");
+      const spreads = matchHoldStructures(first, last, "spread");
+      const flyDx = flies.map((r) => r.b.prem - r.a.prem);
+      const ivDx = flies.map((r) => r.b.iv_fly - r.a.iv_fly);
+      const sprDx = spreads.map((r) => r.b.prem - r.a.prem);
+      el("fhAllCards").innerHTML = [
+        ["Fly nodes", flies.length],
+        ["Spread nodes", spreads.length],
+        ["Mean Δ fly prem", flies.length ? fmt(flyDx.reduce((s, v) => s + v, 0) / flies.length, 3) : "—"],
+        ["Mean Δ IV fly", flies.length ? fmt(ivDx.reduce((s, v) => s + v, 0) / ivDx.length, 3) : "—"],
+        ["Mean Δ spread prem", spreads.length ? fmt(sprDx.reduce((s, v) => s + v, 0) / spreads.length, 3) : "—"],
+      ].map(([k, v]) => `<span><em>${k}</em>${v}</span>`).join("");
+
+      plot("fhFlyCurve", [
+        { x: flies.map((r) => r.key), y: flies.map((r) => r.a.prem), mode: "lines+markers", name: "Entry fly prem", line: { color: "#58a6ff" } },
+        { x: flies.map((r) => r.key), y: flies.map((r) => r.b.prem), mode: "lines+markers", name: "Last fly prem", line: { color: "#3dba7a" } },
+      ], "Fly premium: all strikes (entry vs last)", xLabelHold, "Premium");
+      barPlot("fhFlyBar", flies.map((r) => r.key), flyDx,
+        "Fly premium change bar (last − entry)", xLabelHold, "Δ Premium");
+      barPlot("fhIvFlyBar", flies.map((r) => r.key), ivDx,
+        "IV fly change bar (last − entry)", xLabelHold, "Δ IV fly");
+
+      plot("fhSpreadCurve", [
+        { x: spreads.map((r) => r.key), y: spreads.map((r) => r.a.prem), mode: "lines+markers", name: "Entry spread prem", line: { color: "#58a6ff" } },
+        { x: spreads.map((r) => r.key), y: spreads.map((r) => r.b.prem), mode: "lines+markers", name: "Last spread prem", line: { color: "#3dba7a" } },
+      ], "Spread premium: all strikes (entry vs last)", xLabelHold, "Premium");
+      barPlot("fhSpreadBar", spreads.map((r) => r.key), sprDx,
+        "Spread premium change bar (last − entry)", xLabelHold, "Δ Premium");
+
+      el("fhAllTable").innerHTML = `
+        <thead><tr>
+          <th>${xLabelHold}</th>
+          <th>Fly prem entry</th><th>Fly prem last</th><th>Δ Fly prem</th>
+          <th>IV fly entry</th><th>IV fly last</th><th>Δ IV fly</th>
+          <th>Spread prem entry</th><th>Spread prem last</th><th>Δ Spread prem</th>
+          <th>Δ IV gap</th>
+        </tr></thead>
+        <tbody>${flies.map((fly) => {
+          const spr = spreads.find((s) => s.key === fly.key);
+          return `<tr>
+            <td>${fmt(fly.key, 0)}</td>
+            <td>${fmt(fly.a.prem, 3)}</td>
+            <td>${fmt(fly.b.prem, 3)}</td>
+            <td>${fmt(fly.b.prem - fly.a.prem, 3)}</td>
+            <td>${fmt(fly.a.iv_fly, 3)}</td>
+            <td>${fmt(fly.b.iv_fly, 3)}</td>
+            <td>${fmt(fly.b.iv_fly - fly.a.iv_fly, 3)}</td>
+            <td>${spr ? fmt(spr.a.prem, 3) : "—"}</td>
+            <td>${spr ? fmt(spr.b.prem, 3) : "—"}</td>
+            <td>${spr ? fmt(spr.b.prem - spr.a.prem, 3) : "—"}</td>
+            <td>${spr ? fmt(spr.b.iv_gap - spr.a.iv_gap, 3) : "—"}</td>
+          </tr>`;
+        }).join("")}</tbody>`;
+    }
+
+    if (!allMode) {
+      const focus = Number(state.holdFocusStrike);
+      const flySeries = days.map((d) => ({ day: d, row: findHoldStructure(d, "fly", focus) }));
+      const sprSeries = days.map((d) => ({ day: d, row: findHoldStructure(d, "spread", focus) }));
+      const flyOk = flySeries.filter((x) => x.row);
+      const sprOk = sprSeries.filter((x) => x.row);
+      const firstFly = flyOk[0] && flyOk[0].row;
+      const lastFly = flyOk[flyOk.length - 1] && flyOk[flyOk.length - 1].row;
+      const firstSpr = sprOk[0] && sprOk[0].row;
+      const lastSpr = sprOk[sprOk.length - 1] && sprOk[sprOk.length - 1].row;
+
+      el("fhFocusCards").innerHTML = [
+        ["Focus", focus],
+        ["Align", holdAlign()],
+        ["Fly prem entry", firstFly ? fmt(firstFly.prem, 3) : "—"],
+        ["Fly prem last", lastFly ? fmt(lastFly.prem, 3) : "—"],
+        ["Δ Fly prem", firstFly && lastFly ? fmt(lastFly.prem - firstFly.prem, 3) : "—"],
+        ["Δ IV fly", firstFly && lastFly ? fmt(lastFly.iv_fly - firstFly.iv_fly, 3) : "—"],
+        ["Δ Spread prem", firstSpr && lastSpr ? fmt(lastSpr.prem - firstSpr.prem, 3) : "—"],
+      ].map(([k, v]) => `<span><em>${k}</em>${v}</span>`).join("");
+
+      plot("fhFlyPath", [{
+        x: flyOk.map((x) => x.day.hold_day),
+        y: flyOk.map((x) => x.row.prem),
+        text: flyOk.map((x) => x.day.date),
+        mode: "lines+markers",
+        name: "Fly premium",
+        line: { color: "#58a6ff" },
+      }], "Focused fly premium along hold", "Hold day", "Premium");
+
+      const flyVsEntry = flyOk.map((x) => x.row.prem - (firstFly ? firstFly.prem : x.row.prem));
+      barPlot("fhFlyPathBar", flyOk.map((x) => x.day.hold_day), flyVsEntry,
+        "Focused fly premium change vs entry (bar)", "Hold day", "Δ Premium",
+        flyOk.map((x) => x.day.date));
+
+      plot("fhIvFlyPath", [{
+        x: flyOk.map((x) => x.day.hold_day),
+        y: flyOk.map((x) => x.row.iv_fly),
+        text: flyOk.map((x) => x.day.date),
+        mode: "lines+markers",
+        name: "IV fly",
+        line: { color: "#a371f7" },
+      }], "Focused IV fly along hold", "Hold day", "IV fly");
+
+      plot("fhSpreadPath", [{
+        x: sprOk.map((x) => x.day.hold_day),
+        y: sprOk.map((x) => x.row.prem),
+        text: sprOk.map((x) => x.day.date),
+        mode: "lines+markers",
+        name: "Spread premium",
+        line: { color: "#3dba7a" },
+      }], "Focused spread premium along hold", "Hold day", "Premium");
+
+      const sprVsEntry = sprOk.map((x) => x.row.prem - (firstSpr ? firstSpr.prem : x.row.prem));
+      barPlot("fhSpreadPathBar", sprOk.map((x) => x.day.hold_day), sprVsEntry,
+        "Focused spread premium change vs entry (bar)", "Hold day", "Δ Premium",
+        sprOk.map((x) => x.day.date));
+
+      el("fhFocusTable").innerHTML = `
+        <thead><tr>
+          <th>Hold day</th><th>Date</th><th>DTE</th><th>Spot</th>
+          <th>Fly prem</th><th>Δ fly vs entry</th><th>IV fly</th>
+          <th>Spread prem</th><th>Δ spr vs entry</th><th>IV gap</th>
+          <th>Centre/Near</th><th>Offset</th>
+        </tr></thead>
+        <tbody>${days.map((d) => {
+          const fly = findHoldStructure(d, "fly", focus);
+          const spr = findHoldStructure(d, "spread", focus);
+          return `<tr>
+            <td>${d.hold_day}</td>
+            <td>${d.date}</td>
+            <td>${fmt(d.dte, 0)}</td>
+            <td>${fmt(d.spot, 2)}</td>
+            <td>${fly ? fmt(fly.prem, 3) : "—"}</td>
+            <td>${fly && firstFly ? fmt(fly.prem - firstFly.prem, 3) : "—"}</td>
+            <td>${fly ? fmt(fly.iv_fly, 3) : "—"}</td>
+            <td>${spr ? fmt(spr.prem, 3) : "—"}</td>
+            <td>${spr && firstSpr ? fmt(spr.prem - firstSpr.prem, 3) : "—"}</td>
+            <td>${spr ? fmt(spr.iv_gap, 3) : "—"}</td>
+            <td>${fly ? fmt(fly.centre, 0) : (spr ? fmt(spr.near, 0) : "—")}</td>
+            <td>${fly ? fmt(fly.offset, 0) : (spr ? fmt(spr.offset, 0) : "—")}</td>
+          </tr>`;
+        }).join("")}</tbody>`;
+    }
+
+    el("fhDaysTable").innerHTML = `
+      <thead><tr>
+        <th>Hold day</th><th>Date</th><th>Hour</th><th>Expiry</th><th>DTE</th>
+        <th>Spot</th><th>ATM</th><th>Level</th><th>Skew</th><th>Curvature</th>
+        <th>Call flies</th><th>Put flies</th>
+      </tr></thead>
+      <tbody>${days.map((d) => `
+        <tr>
+          <td>${d.hold_day}</td>
+          <td>${d.date}</td>
+          <td>${d.hour || ""}</td>
+          <td>${d.expiry || ""}</td>
+          <td>${fmt(d.dte, 0)}</td>
+          <td>${fmt(d.spot, 2)}</td>
+          <td>${fmt(d.atm_strike, 0)}</td>
+          <td>${fmt(d.level, 3)}</td>
+          <td>${fmt(d.skew, 3)}</td>
+          <td>${fmt(d.curvature, 3)}</td>
+          <td>${(d.call_flies || []).length}</td>
+          <td>${(d.put_flies || []).length}</td>
+        </tr>`).join("")}</tbody>`;
   }
 
   function paintModeNotes() {
@@ -881,6 +1445,22 @@
     el("faUpload").addEventListener("change", () => {
       if (el("faUpload").files && el("faUpload").files.length) loadUploadedFolder();
     });
+    el("faModeCompare").onclick = () => {
+      setView("compare");
+      if (state.dates.length && !state.compare) runCompare();
+    };
+    el("faModeHold").onclick = async () => {
+      setView("hold");
+      if (state.dates.length) {
+        try {
+          await loadHoldMeta();
+          await runHoldPath();
+        } catch (err) {
+          state.holdError = String(err.message || err);
+          paintWarn();
+        }
+      }
+    };
     el("faRefreshFolders").onclick = () => refreshFolders();
     el("faUseFolder").onclick = () => {
       const path = el("faPath").value.trim() || el("faFolder").value;
@@ -889,6 +1469,60 @@
     el("faFolder").onchange = () => {
       el("faPath").value = el("faFolder").value;
     };
+    el("fhDate").onchange = async () => {
+      state.holdDate = el("fhDate").value;
+      await loadHoldMeta();
+      await runHoldPath();
+    };
+    el("fhHoldDays").onchange = async () => {
+      state.holdDays = Number(el("fhHoldDays").value) || 10;
+      await runHoldPath();
+    };
+    el("fhHour").onchange = async () => {
+      state.holdHour = el("fhHour").value;
+      fillHoldExpiries();
+      await runHoldPath();
+    };
+    el("fhTargetDte").onchange = async () => {
+      state.holdTargetDte = Number(el("fhTargetDte").value) || 60;
+      await loadHoldMeta();
+      await runHoldPath();
+    };
+    el("fhExpiryMode").onchange = async () => {
+      state.holdExpiryMode = el("fhExpiryMode").value;
+      fillHoldExpiries();
+      await runHoldPath();
+    };
+    el("fhExpiry").onchange = async () => {
+      state.holdExpiry = el("fhExpiry").value;
+      await runHoldPath();
+    };
+    el("fhWing").onchange = () => runHoldPath();
+    el("fhSpreadWidth").onchange = () => runHoldPath();
+    el("fhSide").onchange = () => { fillHoldFocus(); paintHoldAll(); };
+    el("fhAlign").onchange = () => { fillHoldFocus(); paintHoldAll(); };
+    el("fhFocusStrike").onchange = () => {
+      const raw = el("fhFocusStrike").value;
+      state.holdFocusStrike = raw === "all" || raw === "" ? "all" : Number(raw);
+      paintHoldAll();
+    };
+    el("fhPrev").onclick = async () => {
+      const next = shiftDate(state.holdDate, -1);
+      if (!next) return;
+      state.holdDate = next;
+      el("fhDate").value = next;
+      await loadHoldMeta();
+      await runHoldPath();
+    };
+    el("fhNext").onclick = async () => {
+      const next = shiftDate(state.holdDate, 1);
+      if (!next) return;
+      state.holdDate = next;
+      el("fhDate").value = next;
+      await loadHoldMeta();
+      await runHoldPath();
+    };
+    el("fhRun").onclick = () => runHoldPath();
     el("faDateA").onchange = async () => {
       state.dateA = el("faDateA").value;
       await loadMeta();
@@ -1025,7 +1659,8 @@
       bind();
       root.dataset.ready = READY;
     }
-    el("faAlign").value = state.align;
+    if (el("faAlign")) el("faAlign").value = state.align;
+    setView(state.view);
     fillFolders();
     // Soft-discover local desk folders if available; do not auto-load them.
     refreshFolders();
@@ -1033,9 +1668,12 @@
       fillDates();
       try {
         await loadMeta();
-        await runCompare();
+        await loadHoldMeta();
+        if (state.view === "hold") await runHoldPath();
+        else await runCompare();
       } catch (err) {
         state.error = String(err.message || err);
+        state.holdError = state.error;
         paintWarn();
       }
     }

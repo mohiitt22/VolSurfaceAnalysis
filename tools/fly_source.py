@@ -549,6 +549,81 @@ def compare(
     }
 
 
+def hold_path(
+    folder: Path,
+    start_date: str,
+    hold_days: int = 10,
+    hour: str | None = None,
+    expiry: str | None = None,
+    target_dte: float = 60.0,
+    wing: float = 100.0,
+    spread_width: float | None = None,
+) -> dict:
+    """Lock the start-day expiry and walk the next 1..10 trading sessions."""
+    hold_days = max(1, min(10, int(hold_days)))
+    dates = list_dates(folder)
+    if start_date not in dates:
+        raise ValueError(f"Start date {start_date} is not in the folder.")
+    i0 = dates.index(start_date)
+    path_dates = dates[i0 : i0 + hold_days + 1]
+    if not path_dates:
+        raise ValueError("No dates available for the hold path.")
+
+    day0 = build_day(
+        folder,
+        path_dates[0],
+        hour=hour,
+        expiry=expiry,
+        target_dte=target_dte,
+        wing=wing,
+        spread_width=spread_width,
+    )
+    locked = day0["expiry"]
+    chosen_hour = hour or day0["hour"]
+    days = [{"hold_day": 0, **day0}]
+    warnings: list[str] = []
+    for k, day in enumerate(path_dates[1:], start=1):
+        try:
+            built = build_day(
+                folder,
+                day,
+                hour=chosen_hour,
+                expiry=locked,
+                target_dte=target_dte,
+                wing=wing,
+                spread_width=spread_width,
+            )
+            days.append({"hold_day": k, **built})
+        except Exception as exc:
+            warnings.append(f"{day}: {exc}")
+
+    first = days[0]
+    last = days[-1]
+    spot_move = None if first.get("spot") is None or last.get("spot") is None else _round(last["spot"] - first["spot"], 2)
+    spot_pct = None
+    if first.get("spot"):
+        spot_pct = _round(100.0 * (last["spot"] - first["spot"]) / first["spot"], 4)
+    return {
+        "ok": True,
+        "mode": "hold",
+        "folder": str(folder),
+        "start_date": start_date,
+        "locked_expiry": locked,
+        "hold_days_requested": hold_days,
+        "hold_days_available": len(days) - 1,
+        "hour": chosen_hour,
+        "wing": wing,
+        "spread_width": float(spread_width if spread_width is not None else wing),
+        "days": days,
+        "spot_move": spot_move,
+        "spot_move_pct": spot_pct,
+        "dte_start": first.get("dte"),
+        "dte_end": last.get("dte"),
+        "warnings": warnings,
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+
+
 def receive_uploads(files: list[tuple[str, bytes]], label: str | None = None) -> dict:
     if not files:
         raise ValueError("No files uploaded.")

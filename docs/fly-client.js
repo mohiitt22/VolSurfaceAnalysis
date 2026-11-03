@@ -466,12 +466,82 @@
     };
   }
 
+  /**
+   * Same-contract hold path: lock the expiry chosen on the start day (~target DTE),
+   * then walk the next 1..10 trading sessions with that same expiry (DTE falls naturally).
+   * getRows(date) -> Promise<rows>
+   */
+  async function buildHoldPath(dateList, getRows, startDate, opts) {
+    const holdDays = Math.max(1, Math.min(10, Number(opts.holdDays) || 10));
+    const i0 = dateList.indexOf(startDate);
+    if (i0 < 0) throw new Error("Start date " + startDate + " is not in the loaded folder.");
+    const pathDates = [];
+    for (let k = 0; k <= holdDays; k += 1) {
+      if (i0 + k >= dateList.length) break;
+      pathDates.push(dateList[i0 + k]);
+    }
+    if (!pathDates.length) throw new Error("No dates available for the hold path.");
+
+    const rows0 = await getRows(pathDates[0]);
+    const day0 = buildDayFromRows(pathDates[0], rows0, {
+      hour: opts.hour,
+      targetDte: opts.targetDte || 60,
+      expiry: opts.expiry || null,
+      wing: opts.wing || 100,
+      spreadWidth: opts.spreadWidth,
+    });
+    const lockedExpiry = day0.expiry;
+    const hour = opts.hour || day0.hour;
+    const days = [{ hold_day: 0, ...day0 }];
+    const warnings = [];
+
+    for (let k = 1; k < pathDates.length; k += 1) {
+      try {
+        const rows = await getRows(pathDates[k]);
+        const built = buildDayFromRows(pathDates[k], rows, {
+          hour,
+          expiry: lockedExpiry,
+          targetDte: opts.targetDte || 60,
+          wing: opts.wing || 100,
+          spreadWidth: opts.spreadWidth,
+        });
+        days.push({ hold_day: k, ...built });
+      } catch (err) {
+        warnings.push(pathDates[k] + ": " + (err && err.message ? err.message : err));
+      }
+    }
+
+    const first = days[0];
+    const last = days[days.length - 1];
+    return {
+      ok: true,
+      source: "browser-upload",
+      mode: "hold",
+      start_date: startDate,
+      locked_expiry: lockedExpiry,
+      hold_days_requested: holdDays,
+      hold_days_available: days.length - 1,
+      hour,
+      wing: opts.wing || 100,
+      spread_width: opts.spreadWidth || opts.wing || 100,
+      days,
+      spot_move: first && last ? round(last.spot - first.spot, 2) : null,
+      spot_move_pct: first && last && first.spot
+        ? round(100 * (last.spot - first.spot) / first.spot, 4)
+        : null,
+      dte_start: first ? first.dte : null,
+      dte_end: last ? last.dte : null,
+      warnings,
+    };
+  }
+
   window.FlyClient = {
     catalogFiles,
     readParquet,
     dayMetaFromRows,
     buildDayFromRows,
     compareFiles,
+    buildHoldPath,
     listHours,
     listExpiries,
     pickExpiry,
