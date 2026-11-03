@@ -82,6 +82,41 @@ h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; colo
 }
 .tab-icon { font-size: 15px; }
 
+.data-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 24px;
+  background: #0f141b;
+  border-bottom: 1px solid var(--line);
+}
+.data-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  min-width: min(520px, 100%);
+}
+#datasetSelect { min-width: min(520px, 100%); max-width: 100%; }
+.data-note { margin: 0; color: var(--muted); font-size: 12px; flex: 1; min-width: 220px; }
+.data-error {
+  margin: 12px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid #f85149;
+  border-radius: 6px;
+  background: rgba(248, 81, 73, 0.08);
+  color: #ffb1ad;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.data-error b { color: #fff; }
+
 /* Controls bar */
 .controls {
   display: flex;

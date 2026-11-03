@@ -9,8 +9,8 @@
 <body>
   <header class="top">
     <div>
-      <h1>60DTE IV relative-value desk</h1>
-      <p class="sub">Quantitative research engine for 60-DTE option relative-value, post-holdout forward tracking, and causal historical distribution analytics.</p>
+      <h1 id="deskTitle">60DTE IV relative-value desk</h1>
+      <p class="sub" id="deskSub">Quantitative research engine for 60-DTE option relative-value, post-holdout forward tracking, and causal historical distribution analytics.</p>
     </div>
     <div class="badges" id="metaBadges"></div>
   </header>
@@ -26,7 +26,20 @@
     <button class="nav-tab" id="tabSurface" type="button">
       <span class="tab-icon">📈</span> SPX Surface &amp; Butterfly Lab
     </button>
+    <button class="nav-tab" id="tabSpread" type="button">
+      <span class="tab-icon">⚖</span> Spread Analysis
+    </button>
   </nav>
+
+  <section class="data-bar" id="dataBar">
+    <label>
+      Dataset
+      <select id="datasetSelect"></select>
+    </label>
+    <button type="button" id="datasetRefresh">Refresh files</button>
+    <p class="data-note" id="datasetNote">Choose the 12 Oct or 16 Oct workbook. The open tab loads it only when that file meets the tab's requirements.</p>
+  </section>
+  <div class="data-error" id="dataError" hidden></div>
 
   <!-- ==================== VIEW 1: STRATEGY DESK ==================== -->
   <main id="viewStrategy" class="desk-view active">

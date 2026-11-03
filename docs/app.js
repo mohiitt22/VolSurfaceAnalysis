@@ -145,7 +145,8 @@ function catalogItem(structure) {
   return DATA.catalog.find((c) => c.structure === structure) || rowsFor(structure)[0] || null;
 }
 function dteOn(date) {
-  return DATA.dte.find((d) => d.trade_date === date);
+  const list = CURRENT_TAB === "distribution" && DIST_DATA?.dte?.length ? DIST_DATA.dte : (DATA?.dte || []);
+  return list.find((d) => d.trade_date === date);
 }
 function statsOf(structure) {
   return DATA.stats.find((s) => s.structure === structure);
@@ -198,17 +199,132 @@ function pill(v) {
 }
 
 function renderMeta() {
+  paintChrome();
+}
+
+function badge(label, value) {
+  return `<div class="badge">${label}<b>${value}</b></div>`;
+}
+
+function paintChrome() {
+  const title = $("deskTitle");
+  const sub = $("deskSub");
+  const badges = $("metaBadges");
+  if (!title || !badges) return;
+  if (CURRENT_TAB === "surface" || CURRENT_TAB === "spread") {
+    title.textContent = CURRENT_TAB === "spread" ? "Spread analysis" : "SPX surface & butterfly lab";
+    sub.textContent = CURRENT_TAB === "spread"
+      ? "Fixed-strike verticals, with Shapley and integrated-Greeks splits of the IV-only premium change."
+      : "Multi-date smiles, consecutive sessions, live repricing, and the formula guide.";
+    badges.hidden = true;
+    badges.innerHTML = "";
+    return;
+  }
+  badges.hidden = false;
+  if (!DATA || !DATA.meta) {
+    badges.innerHTML = "";
+    return;
+  }
   const m = DATA.meta;
-  $("metaBadges").innerHTML = [
-    ["Research end", m.train_end],
-    ["Holdout", m.test_date],
-    ["Dates", String(m.n_dates)],
-    ["Latest Data", DATA.dates[DATA.dates.length - 1]],
-    ["Named structures", String(m.n_named || m.n_structures)],
-    ["Frozen z", String(m.frozen_z)],
-  ]
-    .map(([k, v]) => `<div class="badge">${k}<b>${v}</b></div>`)
-    .join("");
+  const latest = DATA.dates && DATA.dates.length ? DATA.dates[DATA.dates.length - 1] : "—";
+  if (CURRENT_TAB === "distribution") {
+    title.textContent = "Historical distribution lab";
+    sub.textContent = "Where today's skew sits against history built only from earlier sessions.";
+    badges.innerHTML = [
+      badge("Dates", String(m.n_dates || (DATA.dates || []).length)),
+      badge("Latest data", latest),
+    ].join("");
+    return;
+  }
+  title.textContent = "60DTE IV relative-value desk";
+  sub.textContent = "Quantitative research engine for 60-DTE option relative-value, post-holdout forward tracking, and causal historical distribution analytics.";
+  badges.innerHTML = [
+    badge("Research end", m.train_end),
+    badge("Holdout", m.test_date),
+    badge("Dates", String(m.n_dates)),
+    badge("Latest data", latest),
+    badge("Named structures", String(m.n_named || m.n_structures)),
+    badge("Frozen z", String(m.frozen_z)),
+  ].join("");
+}
+
+function showDataError(text) {
+  const box = $("dataError");
+  if (!box) return;
+  if (!text) {
+    box.hidden = true;
+    box.textContent = "";
+    return;
+  }
+  box.hidden = false;
+  box.textContent = text;
+}
+
+let DATA_CATALOG = [];
+let ACTIVE_DATASET = "";
+
+async function refreshCatalog() {
+  const select = $("datasetSelect");
+  if (!select) return;
+  try {
+    const res = await fetch("/api/catalog");
+    if (!res.ok) throw new Error("catalog HTTP " + res.status);
+    DATA_CATALOG = await res.json();
+  } catch (err) {
+    DATA_CATALOG = [];
+    $("datasetNote").textContent = "The workbook list needs the local desk server. The built-in files are still on screen.";
+  }
+  const current = ACTIVE_DATASET;
+  select.innerHTML = `<option value="">Choose a workbook</option>` + DATA_CATALOG.map((item) => {
+    return `<option value="${item.path}">${item.label || item.path}</option>`;
+  }).join("");
+  select.value = [...select.options].some((o) => o.value === current) ? current : "";
+  if (!select.value) {
+    $("datasetNote").textContent = "Choose the 12 Oct or 16 Oct workbook. The open tab loads it only when that file meets the tab's requirements. Until then, the built-in files stay on screen.";
+  }
+}
+
+async function applySelectedDataset(path) {
+  if (!path) return;
+  const tab = CURRENT_TAB || "strategy";
+  showDataError("");
+  $("datasetNote").textContent = "Checking " + path + " for the " + tab + " tab. The first load of a workbook can take a minute.";
+  let report;
+  try {
+    const res = await fetch("/api/prepare?path=" + encodeURIComponent(path) + "&tab=" + encodeURIComponent(tab));
+    report = await res.json();
+  } catch (err) {
+    showDataError("Could not check " + path + ".\n" + err);
+    return;
+  }
+  if (!report.ok) {
+    showDataError(
+      "This workbook cannot run on the " + tab + " tab.\n" +
+      "Stopped at: " + (report.where || "prepare") + "\n" +
+      (report.error || "Unknown failure")
+    );
+    $("datasetNote").textContent = "The workbook was not applied. The previous data is still on screen.";
+    return;
+  }
+  try {
+    if (report.kind === "surface") {
+      ACTIVE_DATASET = path;
+      const frame = $("surfaceFrame");
+      const which = tab === "spread" ? "tab-spread" : "tab-multidate";
+      const src = "surface/index.html?tab=" + which + "&data=" + encodeURIComponent("/api/raw?path=" + encodeURIComponent(report.cache));
+      if (frame) frame.setAttribute("src", src);
+      $("datasetNote").textContent = report.summary || "Workbook loaded.";
+      return;
+    }
+    if (report.kind === "distribution") {
+      DIST_DATA = report.payload;
+      ACTIVE_DATASET = path;
+      if (tab === "distribution") renderDistributionLab();
+      $("datasetNote").textContent = (report.summary || "Workbook loaded.") + " Market IV only. This file has no fair-smile residual.";
+    }
+  } catch (err) {
+    showDataError("The workbook passed the check, then the page failed while drawing it.\n" + (err && err.stack ? err.stack : err));
+  }
 }
 
 function countDecisions(date, zGate) {
@@ -265,6 +381,7 @@ function renderPostHoldoutChips(activeDate) {
 }
 
 function render() {
+  if (!DATA) return;
   const structure = $("structure").value;
   const date = $("date").value;
   const zGate = Number($("zGate").value);
@@ -956,7 +1073,10 @@ function renderDistributionLab() {
   let targetDate = $("distDate").value;
 
   const fullSeries = computeCausalSeries(structure, metric, windowType);
-  if (!fullSeries.length) return;
+  if (!fullSeries.length) {
+    $("distKpiBanner").innerHTML = "<article class=\"kpi-card\"><div class=\"kpi-title\">Unavailable</div><div class=\"kpi-sub\">This workbook has market IV for the smile structures. It does not have a fair-smile residual, so that metric cannot be plotted.</div></article>";
+    return;
+  }
 
   $("distDate").min = fullSeries[0].trade_date;
   $("distDate").max = fullSeries[fullSeries.length - 1].trade_date;
@@ -1471,32 +1591,70 @@ function inflate(payload) {
   return payload;
 }
 
+function focusSurface(which) {
+  const frame = $("surfaceFrame");
+  if (!frame) return;
+  const tab = which === "spread" ? "tab-spread" : "tab-multidate";
+  const src = frame.getAttribute("src") || "";
+  if (!src || src === "about:blank") {
+    frame.setAttribute("src", "surface/index.html?tab=" + tab);
+    return;
+  }
+  if (frame.contentWindow) frame.contentWindow.postMessage({ type: "open-tab", tab }, window.location.origin);
+}
+
 function switchTab(target) {
   CURRENT_TAB = target;
   const panes = [
     ["strategy", "tabStrategy", "viewStrategy"],
     ["distribution", "tabDistribution", "viewDistribution"],
     ["surface", "tabSurface", "viewSurface"],
+    ["spread", "tabSpread", "viewSurface"],
   ];
+  const shown = new Set();
   for (const [name, tabId, viewId] of panes) {
     const on = name === target;
     const tab = $(tabId);
-    const view = $(viewId);
     if (tab) tab.classList.toggle("active", on);
-    if (view) view.style.display = on ? "block" : "none";
+    if (on) shown.add(viewId);
   }
-  document.body.classList.toggle("show-surface", target === "surface");
-  const hash = target === "distribution" ? "#distribution" : target === "surface" ? "#surface" : "#strategy";
+  ["viewStrategy", "viewDistribution", "viewSurface"].forEach((viewId) => {
+    const view = $(viewId);
+    if (view) view.style.display = shown.has(viewId) ? "block" : "none";
+  });
+  document.body.classList.toggle("show-surface", target === "surface" || target === "spread");
+  paintChrome();
+  const hash = target === "distribution" ? "#distribution" : target === "surface" ? "#surface" : target === "spread" ? "#spread" : "#strategy";
   if (window.location.hash !== hash) window.location.hash = hash;
   if (target === "strategy") render();
   else if (target === "distribution") renderDistributionLab();
-  else {
-    const frame = $("surfaceFrame");
-    if (frame && frame.getAttribute("src") === "about:blank") frame.setAttribute("src", "surface/index.html");
-  }
+  else focusSurface(target);
 }
 
 async function boot() {
+  $("tabStrategy").addEventListener("click", () => switchTab("strategy"));
+  $("tabDistribution").addEventListener("click", () => switchTab("distribution"));
+  $("tabSurface").addEventListener("click", () => switchTab("surface"));
+  $("tabSpread").addEventListener("click", () => switchTab("spread"));
+  window.addEventListener("hashchange", () => {
+    const next = window.location.hash === "#distribution"
+      ? "distribution"
+      : window.location.hash === "#surface"
+        ? "surface"
+        : window.location.hash === "#spread"
+          ? "spread"
+          : "strategy";
+    if (next !== CURRENT_TAB) switchTab(next);
+  });
+  const picker = $("datasetSelect");
+  if (picker) {
+    picker.addEventListener("change", () => applySelectedDataset(picker.value));
+    $("datasetRefresh").addEventListener("click", () => refreshCatalog());
+  }
+  refreshCatalog();
+  if (window.location.hash === "#surface") switchTab("surface");
+  if (window.location.hash === "#spread") switchTab("spread");
+
   const res = await fetch("data/panel.json");
   DATA = inflate(await res.json());
 
@@ -1512,21 +1670,9 @@ async function boot() {
   renderMeta();
   renderWF();
 
-  // Tab switching events
-  $("tabStrategy").addEventListener("click", () => switchTab("strategy"));
-  $("tabDistribution").addEventListener("click", () => switchTab("distribution"));
-  $("tabSurface").addEventListener("click", () => switchTab("surface"));
-  window.addEventListener("hashchange", () => {
-    const next = window.location.hash === "#distribution"
-      ? "distribution"
-      : window.location.hash === "#surface"
-        ? "surface"
-        : "strategy";
-    if (next !== CURRENT_TAB) switchTab(next);
-  });
-
   if (window.location.hash === "#distribution") switchTab("distribution");
   else if (window.location.hash === "#surface") switchTab("surface");
+  else if (window.location.hash === "#spread") switchTab("spread");
   else switchTab("strategy");
 
   // Strategy Desk Events

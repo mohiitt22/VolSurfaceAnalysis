@@ -592,6 +592,9 @@
       border-radius: 0 6px 6px 0;
     }
 
+    body.spread-only > header,
+    body.spread-only > footer { display: none; }
+
     /* Footer */
     footer {
       text-align: center;
@@ -635,6 +638,7 @@
   </header>
 
   <main>
+    <div id="surfaceLoadError" style="display:none;margin:0 0 16px;padding:12px 14px;border:1px solid #f85149;border-radius:8px;background:rgba(248,81,73,0.1);color:#ffb1ad;white-space:pre-wrap;"></div>
     <!-- TAB 1: MULTI-DATE COMPARISON -->
     <div id="tab-multidate" class="tab-pane active">
       
@@ -1220,6 +1224,10 @@ Total Vol P&amp;L:    ΔF_total = ΔF_L + ΔF_S + ΔF_C + ΔF_ε
         </div>
       </div>
     </div>
+
+    <div id="tab-spread" class="tab-pane">
+      <div id="spread-root"></div>
+    </div>
   </main>
 
   <footer>
@@ -1232,6 +1240,8 @@ Total Vol P&amp;L:    ΔF_total = ΔF_L + ΔF_S + ΔF_C + ΔF_ε
   </script>
 
   <!-- Application Logic -->
+  <script src="../spread-math.js"></script>
+  <script src="../spread-lab.js"></script>
   <script>
     // Global State
     let DATA = null;
@@ -1246,20 +1256,48 @@ Total Vol P&amp;L:    ΔF_total = ΔF_L + ΔF_S + ΔF_C + ΔF_ε
     ];
 
     // Initialize Application
-    window.addEventListener('DOMContentLoaded', () => {
+    async function loadSurfacePayload() {
+      const requested = new URLSearchParams(window.location.search).get('data');
+      if (requested) {
+        const res = await fetch(requested);
+        if (!res.ok) {
+          throw new Error('HTTP ' + res.status + ' while reading ' + requested);
+        }
+        const payload = await res.json();
+        if (!payload || !Array.isArray(payload.all_dates) || !payload.dates_data) {
+          const keys = payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 12).join(', ') : typeof payload;
+          throw new Error('This file cannot drive the butterfly lab. Expected all_dates and dates_data. Found: ' + keys);
+        }
+        return payload;
+      }
+      const rawEl = document.getElementById('precalculated-data');
+      if (!rawEl || !rawEl.textContent.trim()) {
+        throw new Error('Embedded precalculated-data block is empty.');
+      }
+      return JSON.parse(rawEl.textContent);
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const errorBox = document.getElementById('surfaceLoadError');
       try {
-        const rawEl = document.getElementById('precalculated-data');
-        DATA = JSON.parse(rawEl.textContent);
-        console.log("Loaded dataset successfully:", DATA.all_dates.length, "dates");
-        
+        DATA = await loadSurfacePayload();
         populateDateDropdowns();
         onDateSelectionChanged();
         renderFactorHistoryChart();
         initSimLab();
         initConsecutiveWorkspace();
+        const requestedTab = new URLSearchParams(window.location.search).get('tab');
+        if (requestedTab) switchTab(requestedTab);
+        window.addEventListener('message', (ev) => {
+          if (!ev.data || ev.data.type !== 'open-tab' || !ev.data.tab) return;
+          switchTab(ev.data.tab);
+        });
       } catch (err) {
-        console.error("Initialization failed:", err);
-        alert("Failed to load embedded quantitative dataset: " + err);
+        console.error('Initialization failed:', err);
+        if (errorBox) {
+          errorBox.style.display = 'block';
+          errorBox.textContent = 'SPX surface failed while loading data.\n' + (err && err.stack ? err.stack : err);
+        }
       }
     });
 
@@ -1273,8 +1311,10 @@ Total Vol P&amp;L:    ΔF_total = ΔF_L + ΔF_S + ΔF_C + ΔF_ε
         targetPane.classList.add('active');
       }
       
-      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId));
       if (btn) btn.classList.add('active');
+      document.body.classList.toggle('spread-only', tabId === 'tab-spread');
+      if (tabId === 'tab-spread' && window.SpreadLab && DATA) SpreadLab.mount(DATA);
 
       // Trigger Plotly relayout to fit sizes
       setTimeout(() => {
