@@ -211,11 +211,16 @@ function paintChrome() {
   const sub = $("deskSub");
   const badges = $("metaBadges");
   if (!title || !badges) return;
-  if (CURRENT_TAB === "surface" || CURRENT_TAB === "spread") {
-    title.textContent = CURRENT_TAB === "spread" ? "Spread analysis" : "SPX surface & butterfly lab";
-    sub.textContent = CURRENT_TAB === "spread"
-      ? "Fixed-strike verticals, with Shapley and integrated-Greeks splits of the IV-only premium change."
-      : "Multi-date smiles, consecutive sessions, live repricing, and the formula guide.";
+  if (CURRENT_TAB === "surface" || CURRENT_TAB === "spread" || CURRENT_TAB === "fly") {
+    if (CURRENT_TAB === "fly") {
+      title.textContent = "Fly analysis";
+      sub.textContent = "Hourly SNP chains by folder — day-vs-day spot, smile, fly and vertical-spread premiums near 60 DTE.";
+    } else {
+      title.textContent = CURRENT_TAB === "spread" ? "Spread analysis" : "SPX surface & butterfly lab";
+      sub.textContent = CURRENT_TAB === "spread"
+        ? "Fixed-strike verticals, with Shapley and integrated-Greeks splits of the IV-only premium change."
+        : "Multi-date smiles, consecutive sessions, live repricing, and the formula guide.";
+    }
     badges.hidden = true;
     badges.innerHTML = "";
     return;
@@ -1610,6 +1615,7 @@ function switchTab(target) {
     ["distribution", "tabDistribution", "viewDistribution"],
     ["surface", "tabSurface", "viewSurface"],
     ["spread", "tabSpread", "viewSurface"],
+    ["fly", "tabFly", "viewFly"],
   ];
   const shown = new Set();
   for (const [name, tabId, viewId] of panes) {
@@ -1618,17 +1624,29 @@ function switchTab(target) {
     if (tab) tab.classList.toggle("active", on);
     if (on) shown.add(viewId);
   }
-  ["viewStrategy", "viewDistribution", "viewSurface"].forEach((viewId) => {
+  ["viewStrategy", "viewDistribution", "viewSurface", "viewFly"].forEach((viewId) => {
     const view = $(viewId);
     if (view) view.style.display = shown.has(viewId) ? "block" : "none";
   });
   document.body.classList.toggle("show-surface", target === "surface" || target === "spread");
+  const dataBar = $("dataBar");
+  if (dataBar) dataBar.style.display = target === "fly" ? "none" : "";
   paintChrome();
-  const hash = target === "distribution" ? "#distribution" : target === "surface" ? "#surface" : target === "spread" ? "#spread" : "#strategy";
+  const hash = target === "distribution"
+    ? "#distribution"
+    : target === "surface"
+      ? "#surface"
+      : target === "spread"
+        ? "#spread"
+        : target === "fly"
+          ? "#fly"
+          : "#strategy";
   if (window.location.hash !== hash) window.location.hash = hash;
   if (target === "strategy") render();
   else if (target === "distribution") renderDistributionLab();
-  else focusSurface(target);
+  else if (target === "fly") {
+    if (window.FlyLab) window.FlyLab.mount($("fly-root"));
+  } else focusSurface(target);
 }
 
 async function boot() {
@@ -1636,6 +1654,7 @@ async function boot() {
   $("tabDistribution").addEventListener("click", () => switchTab("distribution"));
   $("tabSurface").addEventListener("click", () => switchTab("surface"));
   $("tabSpread").addEventListener("click", () => switchTab("spread"));
+  if ($("tabFly")) $("tabFly").addEventListener("click", () => switchTab("fly"));
   window.addEventListener("hashchange", () => {
     const next = window.location.hash === "#distribution"
       ? "distribution"
@@ -1643,7 +1662,9 @@ async function boot() {
         ? "surface"
         : window.location.hash === "#spread"
           ? "spread"
-          : "strategy";
+          : window.location.hash === "#fly"
+            ? "fly"
+            : "strategy";
     if (next !== CURRENT_TAB) switchTab(next);
   });
   const picker = $("datasetSelect");
@@ -1654,6 +1675,7 @@ async function boot() {
   refreshCatalog();
   if (window.location.hash === "#surface") switchTab("surface");
   if (window.location.hash === "#spread") switchTab("spread");
+  if (window.location.hash === "#fly") switchTab("fly");
 
   const res = await fetch("data/panel.json");
   DATA = inflate(await res.json());
@@ -1673,6 +1695,7 @@ async function boot() {
   if (window.location.hash === "#distribution") switchTab("distribution");
   else if (window.location.hash === "#surface") switchTab("surface");
   else if (window.location.hash === "#spread") switchTab("spread");
+  else if (window.location.hash === "#fly") switchTab("fly");
   else switchTab("strategy");
 
   // Strategy Desk Events

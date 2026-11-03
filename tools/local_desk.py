@@ -6,6 +6,7 @@ Nothing here is published.
 
 from __future__ import annotations
 
+import cgi
 import json
 import sys
 import traceback
@@ -140,6 +141,98 @@ def catalog() -> list[dict]:
     return source_catalog()
 
 
+def _err(exc: Exception) -> dict:
+    tb = traceback.extract_tb(exc.__traceback__)
+    frame = tb[-1] if tb else None
+    where = f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}" if frame else type(exc).__name__
+    return {"ok": False, "where": where, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _json_response(handler: SimpleHTTPRequestHandler, payload: dict, status: int = 200) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def fly_active_folder():
+    import fly_source
+
+    folder = fly_source.load_active_folder()
+    if folder is None:
+        discovered = fly_source.discover_folders()
+        if discovered:
+            folder = fly_source.resolve_folder(discovered[0]["path"])
+            fly_source.save_active_folder(folder)
+    return folder
+
+
+def handle_fly_get(path: str, query: dict) -> dict:
+    import fly_source
+
+    if path == "/api/fly/folders":
+        active = fly_source.load_active_folder()
+        return {
+            "ok": True,
+            "folders": fly_source.discover_folders(),
+            "active": None
+            if active is None
+            else (
+                active.relative_to(ROOT).as_posix()
+                if str(active).startswith(str(ROOT))
+                else str(active)
+            ),
+        }
+    if path == "/api/fly/set_folder":
+        folder = fly_source.resolve_folder(query.get("path", [""])[0])
+        fly_source.save_active_folder(folder)
+        dates = fly_source.list_dates(folder)
+        return {
+            "ok": True,
+            "path": query.get("path", [""])[0],
+            "dates": dates,
+            "count": len(dates),
+            "first": dates[0] if dates else None,
+            "last": dates[-1] if dates else None,
+        }
+    folder = fly_active_folder()
+    if folder is None:
+        return {"ok": False, "error": "No SNP parquet folder is selected yet."}
+    if path == "/api/fly/dates":
+        dates = fly_source.list_dates(folder)
+        return {"ok": True, "path": str(folder), "dates": dates, "count": len(dates)}
+    if path == "/api/fly/meta":
+        day = query.get("date", [""])[0]
+        target = float(query.get("target_dte", ["60"])[0] or 60)
+        meta = fly_source.day_meta(folder, day, target_dte=target)
+        meta["ok"] = True
+        meta["path"] = str(folder)
+        return meta
+    if path == "/api/fly/compare":
+        date_a = query.get("date_a", [""])[0]
+        date_b = query.get("date_b", [""])[0]
+        hour = query.get("hour", [None])[0] or None
+        expiry_a = query.get("expiry_a", [None])[0] or None
+        expiry_b = query.get("expiry_b", [None])[0] or None
+        target = float(query.get("target_dte", ["60"])[0] or 60)
+        wing = float(query.get("wing", ["100"])[0] or 100)
+        spread = query.get("spread_width", [None])[0]
+        spread_width = float(spread) if spread not in (None, "") else None
+        return fly_source.compare(
+            folder,
+            date_a,
+            date_b,
+            hour=hour,
+            expiry_a=expiry_a or None,
+            expiry_b=expiry_b or None,
+            target_dte=target,
+            wing=wing,
+            spread_width=spread_width,
+        )
+    return {"ok": False, "error": f"Unknown fly endpoint {path}"}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(DOCS), **kwargs)
@@ -150,37 +243,30 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/fly/"):
+            try:
+                payload = handle_fly_get(parsed.path, parse_qs(parsed.query))
+            except Exception as exc:
+                payload = _err(exc)
+            _json_response(self, payload)
+            return
         if parsed.path == "/api/prepare":
             from prepare_source import prepare
             query = parse_qs(parsed.query)
             rel = query.get("path", [""])[0]
             tab = query.get("tab", ["strategy"])[0]
             try:
-                body = json.dumps(prepare(rel, tab)).encode("utf-8")
+                body = prepare(rel, tab)
             except Exception as exc:
-                tb = traceback.extract_tb(exc.__traceback__)
-                frame = tb[-1] if tb else None
-                where = f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}" if frame else type(exc).__name__
-                body = json.dumps({"ok": False, "where": where, "error": f"{type(exc).__name__}: {exc}"}).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+                body = _err(exc)
+            _json_response(self, body)
             return
         if parsed.path == "/api/catalog":
-            body = json.dumps(catalog()).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            _json_response(self, catalog())
             return
         if parsed.path == "/api/inspect":
             rel = parse_qs(parsed.query).get("path", [""])[0]
-            body = json.dumps(inspect(rel)).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            _json_response(self, inspect(rel))
             return
         if parsed.path == "/api/raw":
             rel = parse_qs(parsed.query).get("path", [""])[0]
@@ -201,6 +287,62 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
         return super().do_GET()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/fly/set_folder":
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                import fly_source
+
+                folder = fly_source.resolve_folder(payload.get("path"))
+                fly_source.save_active_folder(folder)
+                dates = fly_source.list_dates(folder)
+                _json_response(
+                    self,
+                    {
+                        "ok": True,
+                        "path": payload.get("path"),
+                        "dates": dates,
+                        "count": len(dates),
+                        "first": dates[0] if dates else None,
+                        "last": dates[-1] if dates else None,
+                    },
+                )
+            except Exception as exc:
+                _json_response(self, _err(exc))
+            return
+        if parsed.path == "/api/fly/upload":
+            try:
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={
+                        "REQUEST_METHOD": "POST",
+                        "CONTENT_TYPE": self.headers.get("Content-Type", ""),
+                    },
+                )
+                files = []
+                label = None
+                if "label" in form:
+                    label = form.getvalue("label")
+                items = form["file"] if "file" in form else []
+                if not isinstance(items, list):
+                    items = [items]
+                for item in items:
+                    if not getattr(item, "filename", None):
+                        continue
+                    files.append((item.filename, item.file.read()))
+                import fly_source
+
+                _json_response(self, fly_source.receive_uploads(files, label=label))
+            except Exception as exc:
+                _json_response(self, _err(exc))
+            return
+        self.send_response(404)
+        self.end_headers()
 
 
 def main():

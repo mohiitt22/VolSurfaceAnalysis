@@ -29,6 +29,9 @@
     <button class="nav-tab" id="tabSpread" type="button">
       <span class="tab-icon">⚖</span> Spread Analysis
     </button>
+    <button class="nav-tab" id="tabFly" type="button">
+      <span class="tab-icon">🦋</span> Fly Analysis
+    </button>
   </nav>
 
   <section class="data-bar" id="dataBar">
@@ -366,10 +369,16 @@
     ></iframe>
   </main>
 
+  <main id="viewFly" class="desk-view" style="display:none;">
+    <div id="fly-root"></div>
+  </main>
+
   <footer>
     60-DTE Relative-Value Framework &middot; Training 2025-06-05 &rarr; 2026-09-08. Holdout 11 Sep 2026 frozen.
     Data available through 2026-09-22. Dynamic historical distribution analysis is strictly causal with zero forward lookahead.
   </footer>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="fly-lab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
