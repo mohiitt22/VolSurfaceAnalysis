@@ -1,10 +1,13 @@
 /* Fly Analysis tab — hourly parquet folders, day A/B smile / fly / spread compare. */
 (function () {
-  const READY = "strike-v1";
+  const READY = "upload-v1";
   const state = {
     folder: "",
     folders: [],
     dates: [],
+    filesByDate: new Map(),
+    rowCache: new Map(),
+    source: "upload",
     dateA: null,
     dateB: null,
     hour: null,
@@ -22,7 +25,7 @@
     compare: null,
     busy: false,
     error: "",
-    note: "Pick an SNP parquet folder (one YYYY-MM-DD.parquet per day), then choose hour and expiry.",
+    note: "Choose your SNP data folder from this computer (files named YYYY-MM-DD.parquet).",
   };
 
   function el(id) {
@@ -100,24 +103,27 @@
   function shell() {
     return `
       <section class="sa-block">
-        <h2>Data folder</h2>
-        <p class="sa-note">Use a folder of hourly chain files named <code>YYYY-MM-DD.parquet</code> with columns contract, time, expiry, strike, underlying, IVs, premiums, Greeks, atm, dte. Project <code>SNP data</code> is detected automatically. You can also upload a whole folder of those parquets.</p>
+        <h2>Upload data folder</h2>
+        <p class="sa-note">Select the folder on your computer that contains hourly chain files named <code>YYYY-MM-DD.parquet</code> (columns: contract, time, expiry, strike, underlying, IVs, premiums, Greeks, atm, dte). Files are read in the browser — nothing is uploaded to a remote server. Only the dates you compare are parsed.</p>
         <div class="sa-controls">
-          <label>Detected folders
-            <select id="faFolder"></select>
-          </label>
-          <label>Or folder path
-            <input id="faPath" type="text" placeholder="SNP data" />
-          </label>
-          <label>Upload folder
+          <label>Choose folder from this computer
             <input id="faUpload" type="file" webkitdirectory multiple />
           </label>
         </div>
         <div class="sa-nav">
-          <button type="button" id="faUseFolder">Use folder</button>
-          <button type="button" id="faRefreshFolders">Refresh folders</button>
-          <button type="button" id="faUploadBtn">Upload selected files</button>
+          <button type="button" id="faLoadFolder">Load selected folder</button>
         </div>
+        <details class="sa-note" style="margin-top:8px">
+          <summary style="cursor:pointer;color:#58a6ff">Optional: use local desk path (developer)</summary>
+          <div class="sa-controls" style="margin-top:8px">
+            <label>Detected folders <select id="faFolder"></select></label>
+            <label>Or folder path <input id="faPath" type="text" placeholder="SNP data" /></label>
+          </div>
+          <div class="sa-nav">
+            <button type="button" id="faUseFolder">Use local path</button>
+            <button type="button" id="faRefreshFolders">Refresh local folders</button>
+          </div>
+        </details>
         <div id="faFolderNote" class="sa-summary"></div>
       </section>
       <section class="sa-block">
@@ -250,10 +256,47 @@
   }
 
   async function api(url, options) {
-    const res = await fetch(url, options);
-    const payload = await res.json();
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (err) {
+      throw new Error("Local desk API unreachable: " + (err && err.message ? err.message : err));
+    }
+    const text = await res.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch (err) {
+      throw new Error("Local desk API is not available on this host. Use Choose folder from this computer instead.");
+    }
     if (!payload.ok) throw new Error(payload.error || "Request failed");
     return payload;
+  }
+
+  async function rowsFor(day) {
+    if (state.rowCache.has(day)) return state.rowCache.get(day);
+    const file = state.filesByDate.get(day);
+    if (!file) throw new Error("No uploaded file for " + day);
+    if (!window.FlyClient) throw new Error("fly-client.js failed to load.");
+    const rows = await window.FlyClient.readParquet(file);
+    state.rowCache.set(day, rows);
+    return rows;
+  }
+
+  function applyUploadedCatalog(fileList, label) {
+    if (!window.FlyClient) throw new Error("fly-client.js failed to load.");
+    const catalog = window.FlyClient.catalogFiles(fileList);
+    if (!catalog.count) {
+      throw new Error("No YYYY-MM-DD.parquet files found in that folder.");
+    }
+    state.source = "upload";
+    state.folder = label || "Uploaded folder";
+    state.filesByDate = catalog.byDate;
+    state.rowCache = new Map();
+    state.dates = catalog.dates;
+    state.metaA = null;
+    state.metaB = null;
+    state.compare = null;
   }
 
   function shiftDate(iso, step) {
@@ -264,13 +307,18 @@
 
   function fillFolders() {
     const select = el("faFolder");
-    select.innerHTML = `<option value="">Choose folder</option>` + state.folders.map((f) =>
-      `<option value="${f.path}">${f.label} · ${f.first} → ${f.last}</option>`
-    ).join("");
-    if (state.folder) select.value = state.folder;
-    el("faPath").value = state.folder || "";
-    el("faFolderNote").innerHTML = state.folder
-      ? `<span><em>Active</em>${state.folder}</span><span><em>Days</em>${state.dates.length}</span>`
+    if (select) {
+      select.innerHTML = `<option value="">Choose folder</option>` + state.folders.map((f) =>
+        `<option value="${f.path}">${f.label} · ${f.first} → ${f.last}</option>`
+      ).join("");
+      if (state.source === "local" && state.folder) select.value = state.folder;
+    }
+    if (el("faPath") && state.source === "local") el("faPath").value = state.folder || "";
+    el("faFolderNote").innerHTML = state.dates.length
+      ? `<span><em>Source</em>${state.source === "upload" ? "Browser folder" : "Local desk"}</span>` +
+        `<span><em>Active</em>${state.folder}</span>` +
+        `<span><em>Days</em>${state.dates.length}</span>` +
+        `<span><em>Range</em>${state.dates[0]} → ${state.dates[state.dates.length - 1]}</span>`
       : `<span>${state.note}</span>`;
   }
 
@@ -365,17 +413,14 @@
   }
 
   async function refreshFolders() {
-    state.error = "";
+    // Optional local-desk discovery only. Browser folder upload is the main path.
     try {
       const payload = await api("/api/fly/folders");
       state.folders = payload.folders || [];
-      if (!state.folder && payload.active) state.folder = payload.active;
-      if (!state.folder && state.folders.length) state.folder = state.folders[0].path;
       fillFolders();
-      if (state.folder) await useFolder(state.folder);
     } catch (err) {
-      state.error = String(err.message || err);
-      paintWarn();
+      state.folders = [];
+      fillFolders();
     }
   }
 
@@ -385,8 +430,37 @@
     paintWarn();
     try {
       const payload = await api("/api/fly/set_folder?path=" + encodeURIComponent(path));
+      state.source = "local";
       state.folder = path;
+      state.filesByDate = new Map();
+      state.rowCache = new Map();
       state.dates = payload.dates || [];
+      fillFolders();
+      fillDates();
+      await loadMeta();
+      await runCompare();
+    } catch (err) {
+      state.error = String(err.message || err);
+    } finally {
+      state.busy = false;
+      paintWarn();
+    }
+  }
+
+  async function loadUploadedFolder() {
+    const input = el("faUpload");
+    if (!input.files || !input.files.length) {
+      state.error = "Choose a folder of YYYY-MM-DD.parquet files first.";
+      paintWarn();
+      return;
+    }
+    state.busy = true;
+    state.error = "";
+    paintWarn();
+    try {
+      const first = input.files[0];
+      const label = (first.webkitRelativePath || first.name || "folder").split(/[/\\]/)[0] || "Uploaded folder";
+      applyUploadedCatalog(input.files, label);
       fillFolders();
       fillDates();
       await loadMeta();
@@ -402,74 +476,65 @@
   async function loadMeta() {
     if (!state.dateA || !state.dateB) return;
     const target = state.targetDte;
-    const [metaA, metaB] = await Promise.all([
-      api(`/api/fly/meta?date=${encodeURIComponent(state.dateA)}&target_dte=${target}`),
-      api(`/api/fly/meta?date=${encodeURIComponent(state.dateB)}&target_dte=${target}`),
-    ]);
-    state.metaA = metaA;
-    state.metaB = metaB;
+    if (state.source === "upload") {
+      const [rowsA, rowsB] = await Promise.all([rowsFor(state.dateA), rowsFor(state.dateB)]);
+      state.metaA = window.FlyClient.dayMetaFromRows(state.dateA, rowsA, target);
+      state.metaB = window.FlyClient.dayMetaFromRows(state.dateB, rowsB, target);
+    } else {
+      const [metaA, metaB] = await Promise.all([
+        api(`/api/fly/meta?date=${encodeURIComponent(state.dateA)}&target_dte=${target}`),
+        api(`/api/fly/meta?date=${encodeURIComponent(state.dateB)}&target_dte=${target}`),
+      ]);
+      state.metaA = metaA;
+      state.metaB = metaB;
+    }
     fillHours();
     fillExpiries();
   }
 
   async function runCompare() {
-    if (!state.dateA || !state.dateB || !state.hour) return;
+    if (!state.dateA || !state.dateB) return;
+    if (!state.hour && state.metaA) state.hour = state.metaA.default_hour;
+    if (!state.hour) return;
     state.busy = true;
     state.error = "";
     paintWarn();
     try {
-      const params = new URLSearchParams({
-        date_a: state.dateA,
-        date_b: state.dateB,
-        hour: state.hour,
-        target_dte: String(state.targetDte),
-        wing: String(state.wing),
-        spread_width: String(state.spreadWidth),
-      });
-      if (state.expiryMode === "manual") {
-        if (state.expiryA) params.set("expiry_a", state.expiryA);
-        if (state.expiryB) params.set("expiry_b", state.expiryB);
+      if (state.source === "upload") {
+        const fileA = state.filesByDate.get(state.dateA);
+        const fileB = state.filesByDate.get(state.dateB);
+        if (!fileA || !fileB) throw new Error("Missing uploaded parquet for one of the dates.");
+        const opts = {
+          hour: state.hour,
+          targetDte: state.targetDte,
+          wing: state.wing,
+          spreadWidth: state.spreadWidth,
+        };
+        if (state.expiryMode === "manual") {
+          opts.expiryA = state.expiryA || null;
+          opts.expiryB = state.expiryB || null;
+        }
+        state.compare = await window.FlyClient.compareFiles(fileA, state.dateA, fileB, state.dateB, opts);
+      } else {
+        const params = new URLSearchParams({
+          date_a: state.dateA,
+          date_b: state.dateB,
+          hour: state.hour,
+          target_dte: String(state.targetDte),
+          wing: String(state.wing),
+          spread_width: String(state.spreadWidth),
+        });
+        if (state.expiryMode === "manual") {
+          if (state.expiryA) params.set("expiry_a", state.expiryA);
+          if (state.expiryB) params.set("expiry_b", state.expiryB);
+        }
+        state.compare = await api("/api/fly/compare?" + params.toString());
       }
-      state.compare = await api("/api/fly/compare?" + params.toString());
       fillFocusStrikes();
       paintAll();
     } catch (err) {
       state.error = String(err.message || err);
       state.compare = null;
-    } finally {
-      state.busy = false;
-      paintWarn();
-    }
-  }
-
-  async function uploadFolder() {
-    const input = el("faUpload");
-    if (!input.files || !input.files.length) {
-      state.error = "Choose a folder of .parquet files first.";
-      paintWarn();
-      return;
-    }
-    state.busy = true;
-    state.error = "";
-    paintWarn();
-    try {
-      const form = new FormData();
-      form.append("label", "browser_upload");
-      let count = 0;
-      for (const file of input.files) {
-        if (!/\.parquet$/i.test(file.name)) continue;
-        form.append("file", file, file.name);
-        count += 1;
-      }
-      if (!count) throw new Error("No .parquet files in the selected folder.");
-      const res = await fetch("/api/fly/upload", { method: "POST", body: form });
-      const payload = await res.json();
-      if (!payload.ok) throw new Error(payload.error || "Upload failed");
-      state.folder = payload.path;
-      await refreshFolders();
-      await useFolder(payload.path);
-    } catch (err) {
-      state.error = String(err.message || err);
     } finally {
       state.busy = false;
       paintWarn();
@@ -812,6 +877,10 @@
   }
 
   function bind() {
+    el("faLoadFolder").onclick = () => loadUploadedFolder();
+    el("faUpload").addEventListener("change", () => {
+      if (el("faUpload").files && el("faUpload").files.length) loadUploadedFolder();
+    });
     el("faRefreshFolders").onclick = () => refreshFolders();
     el("faUseFolder").onclick = () => {
       const path = el("faPath").value.trim() || el("faFolder").value;
@@ -820,7 +889,6 @@
     el("faFolder").onchange = () => {
       el("faPath").value = el("faFolder").value;
     };
-    el("faUploadBtn").onclick = () => uploadFolder();
     el("faDateA").onchange = async () => {
       state.dateA = el("faDateA").value;
       await loadMeta();
@@ -958,7 +1026,19 @@
       root.dataset.ready = READY;
     }
     el("faAlign").value = state.align;
-    await refreshFolders();
+    fillFolders();
+    // Soft-discover local desk folders if available; do not auto-load them.
+    refreshFolders();
+    if (state.dates.length) {
+      fillDates();
+      try {
+        await loadMeta();
+        await runCompare();
+      } catch (err) {
+        state.error = String(err.message || err);
+        paintWarn();
+      }
+    }
   }
 
   window.FlyLab = { mount };
